@@ -301,399 +301,400 @@ export function ConstellationGraph({
   }, [hoveredEdge, propEdges]);
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full h-full overflow-hidden rounded-lg border border-border bg-card"
-      data-ocid="wallet.canvas_target"
-    >
-      <svg
-        width={width}
-        height={height}
-        className="absolute inset-0"
-        style={{ display: "block", touchAction: "none" }}
-        role="img"
-        aria-label="ICP wallet transaction network constellation"
+    // Outer wrapper — no overflow-hidden so legend popover renders freely
+    <div className="relative w-full h-full" data-ocid="wallet.canvas_target">
+      {/* Graph canvas — overflow-hidden for SVG clipping */}
+      <div
+        ref={containerRef}
+        className="absolute inset-0 overflow-hidden rounded-lg border border-border bg-card"
       >
-        <title>ICP Wallet Transaction Network</title>
-        <defs>
-          <filter id="glow-center" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="10" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="glow-node" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="glow-edge" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="2" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <radialGradient id="center-grad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#7DD3FF" stopOpacity="1" />
-            <stop offset="60%" stopColor="#4AA8FF" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#2280DD" stopOpacity="0.6" />
-          </radialGradient>
-          <radialGradient id="node-grad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#88D8FF" stopOpacity="1" />
-            <stop offset="100%" stopColor="#4AA8FF" stopOpacity="0.7" />
-          </radialGradient>
-          <radialGradient id="node-grad-alt" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#FFD080" stopOpacity="1" />
-            <stop offset="100%" stopColor="#F0B35A" stopOpacity="0.7" />
-          </radialGradient>
-          <radialGradient id="node-grad-green" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#6FFFB4" stopOpacity="1" />
-            <stop offset="100%" stopColor="#3FE08C" stopOpacity="0.7" />
-          </radialGradient>
-          <radialGradient id="node-grad-purple" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#E0B0FF" stopOpacity="1" />
-            <stop offset="100%" stopColor="#C084FC" stopOpacity="0.7" />
-          </radialGradient>
-        </defs>
+        <svg
+          width={width}
+          height={height}
+          className="absolute inset-0"
+          style={{ display: "block", touchAction: "none" }}
+          role="img"
+          aria-label="ICP wallet transaction network constellation"
+        >
+          <title>ICP Wallet Transaction Network</title>
+          <defs>
+            <filter
+              id="glow-center"
+              x="-80%"
+              y="-80%"
+              width="260%"
+              height="260%"
+            >
+              <feGaussianBlur stdDeviation="10" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="glow-node" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="glow-edge" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="2" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <radialGradient id="center-grad" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#7DD3FF" stopOpacity="1" />
+              <stop offset="60%" stopColor="#4AA8FF" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#2280DD" stopOpacity="0.6" />
+            </radialGradient>
+            <radialGradient id="node-grad" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#88D8FF" stopOpacity="1" />
+              <stop offset="100%" stopColor="#4AA8FF" stopOpacity="0.7" />
+            </radialGradient>
+            <radialGradient id="node-grad-alt" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#FFD080" stopOpacity="1" />
+              <stop offset="100%" stopColor="#F0B35A" stopOpacity="0.7" />
+            </radialGradient>
+            <radialGradient id="node-grad-green" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#6FFFB4" stopOpacity="1" />
+              <stop offset="100%" stopColor="#3FE08C" stopOpacity="0.7" />
+            </radialGradient>
+            <radialGradient id="node-grad-purple" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#E0B0FF" stopOpacity="1" />
+              <stop offset="100%" stopColor="#C084FC" stopOpacity="0.7" />
+            </radialGradient>
+          </defs>
 
-        {/* Background stars */}
-        {STARS.map((star) => (
-          <circle
-            key={star.idx}
-            cx={(star.x / 100) * width}
-            cy={(star.y / 100) * height}
-            r={star.r}
-            fill={COLOR_STAR}
-            opacity={star.op * 0.35}
-          />
-        ))}
-
-        {/* Decorative stars when empty */}
-        {isEmpty &&
-          decorStars.map((star) => (
+          {/* Background stars */}
+          {STARS.map((star) => (
             <circle
               key={star.idx}
               cx={(star.x / 100) * width}
               cy={(star.y / 100) * height}
               r={star.r}
-              fill={COLOR_CENTER}
-              opacity={star.op}
+              fill={COLOR_STAR}
+              opacity={star.op * 0.35}
             />
           ))}
 
-        {/* Edges */}
-        {ns.length > 0 &&
-          propEdges.map((edge) => {
-            const src = ns.find((n) => n.id === edge.source);
-            const tgt = ns.find((n) => n.id === edge.target);
-            if (!src || !tgt) return null;
-            const w =
-              edgeMode === "tx_count" ? edge.tx_count : edge.total_amount;
-            const ratio = w / maxWeight;
-            const opacity = 0.15 + 0.55 * ratio;
-            const strokeW = 0.5 + 2 * ratio;
-            const dx = tgt.x - src.x;
-            const dy = tgt.y - src.y;
-            const cpx = (src.x + tgt.x) / 2 + dy * 0.22;
-            const cpy = (src.y + tgt.y) / 2 - dx * 0.22;
-            const pathD = `M${src.x},${src.y} Q${cpx},${cpy} ${tgt.x},${tgt.y}`;
-            const edgeKey = `${edge.source}|${edge.target}`;
-            return (
-              <g key={edgeKey}>
-                <path
-                  d={pathD}
-                  fill="none"
-                  stroke={COLOR_EDGE}
-                  strokeWidth={strokeW}
-                  opacity={opacity}
-                  filter="url(#glow-edge)"
-                />
-                {/* Transparent hit area for hover/touch */}
-                <path
-                  d={pathD}
-                  fill="none"
-                  stroke="white"
-                  strokeWidth={12}
-                  opacity={0}
-                  style={{ cursor: "crosshair" }}
-                  onMouseEnter={(e) =>
-                    setHoveredEdge({
-                      edgeKey,
-                      screenX: e.clientX,
-                      screenY: e.clientY,
-                    })
-                  }
-                  onMouseMove={(e) =>
-                    setHoveredEdge((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            screenX: e.clientX,
-                            screenY: e.clientY,
-                          }
-                        : prev,
-                    )
-                  }
-                  onMouseLeave={() => setHoveredEdge(null)}
-                  onTouchStart={(e) => {
-                    const touch = e.touches[0];
-                    if (touch) {
+          {/* Decorative stars when empty */}
+          {isEmpty &&
+            decorStars.map((star) => (
+              <circle
+                key={star.idx}
+                cx={(star.x / 100) * width}
+                cy={(star.y / 100) * height}
+                r={star.r}
+                fill={COLOR_CENTER}
+                opacity={star.op}
+              />
+            ))}
+
+          {/* Edges */}
+          {ns.length > 0 &&
+            propEdges.map((edge) => {
+              const src = ns.find((n) => n.id === edge.source);
+              const tgt = ns.find((n) => n.id === edge.target);
+              if (!src || !tgt) return null;
+              const w =
+                edgeMode === "tx_count" ? edge.tx_count : edge.total_amount;
+              const ratio = w / maxWeight;
+              const opacity = 0.15 + 0.55 * ratio;
+              const strokeW = 0.5 + 2 * ratio;
+              const dx = tgt.x - src.x;
+              const dy = tgt.y - src.y;
+              const cpx = (src.x + tgt.x) / 2 + dy * 0.22;
+              const cpy = (src.y + tgt.y) / 2 - dx * 0.22;
+              const pathD = `M${src.x},${src.y} Q${cpx},${cpy} ${tgt.x},${tgt.y}`;
+              const edgeKey = `${edge.source}|${edge.target}`;
+              return (
+                <g key={edgeKey}>
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={COLOR_EDGE}
+                    strokeWidth={strokeW}
+                    opacity={opacity}
+                    filter="url(#glow-edge)"
+                  />
+                  {/* Transparent hit area for hover/touch */}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="white"
+                    strokeWidth={12}
+                    opacity={0}
+                    style={{ cursor: "crosshair" }}
+                    onMouseEnter={(e) =>
                       setHoveredEdge({
                         edgeKey,
-                        screenX: touch.clientX,
-                        screenY: touch.clientY,
-                      });
-                      setTimeout(() => setHoveredEdge(null), 2500);
+                        screenX: e.clientX,
+                        screenY: e.clientY,
+                      })
                     }
-                  }}
-                />
+                    onMouseMove={(e) =>
+                      setHoveredEdge((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              screenX: e.clientX,
+                              screenY: e.clientY,
+                            }
+                          : prev,
+                      )
+                    }
+                    onMouseLeave={() => setHoveredEdge(null)}
+                    onTouchStart={(e) => {
+                      const touch = e.touches[0];
+                      if (touch) {
+                        setHoveredEdge({
+                          edgeKey,
+                          screenX: touch.clientX,
+                          screenY: touch.clientY,
+                        });
+                        setTimeout(() => setHoveredEdge(null), 2500);
+                      }
+                    }}
+                  />
+                </g>
+              );
+            })}
+
+          {/* Nodes */}
+          {ns.map((node) => {
+            const isCenter = node.isCenter;
+            const r = isCenter
+              ? 26
+              : Math.max(7, Math.min(18, 7 + node.txCount * 0.8));
+            return (
+              <g
+                key={node.id}
+                transform={`translate(${node.x}, ${node.y})`}
+                style={{ cursor: isCenter ? "default" : "pointer" }}
+                onClick={() => {
+                  if (!isCenter) onNavigate(node.id);
+                }}
+                onKeyDown={(e) => {
+                  if (!isCenter && (e.key === "Enter" || e.key === " ")) {
+                    onNavigate(node.id);
+                  }
+                }}
+                onTouchStart={(e) => {
+                  if (!isCenter) {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    if (touch) {
+                      showTooltipForTouch(node, touch.clientX, touch.clientY);
+                    }
+                    onNavigate(node.id);
+                  }
+                }}
+                role={isCenter ? undefined : "button"}
+                tabIndex={isCenter ? undefined : 0}
+                onMouseEnter={(e) =>
+                  setTooltip({ screenX: e.clientX, screenY: e.clientY, node })
+                }
+                onMouseLeave={() => setTooltip(null)}
+                onMouseMove={(e) =>
+                  setTooltip((t) =>
+                    t ? { ...t, screenX: e.clientX, screenY: e.clientY } : null,
+                  )
+                }
+                data-ocid={isCenter ? "wallet.canvas_target" : "wallet.button"}
+              >
+                {isCenter ? (
+                  <>
+                    <circle
+                      r={r + 18}
+                      fill="none"
+                      stroke={COLOR_CENTER}
+                      strokeWidth={0.8}
+                      opacity={0.15}
+                    />
+                    <circle
+                      r={r + 10}
+                      fill="none"
+                      stroke={COLOR_CENTER}
+                      strokeWidth={0.8}
+                      opacity={0.25}
+                    />
+                    <circle
+                      r={r}
+                      fill="url(#center-grad)"
+                      filter="url(#glow-center)"
+                    />
+                  </>
+                ) : (
+                  <circle
+                    r={r}
+                    fill={getNodeGradient(node)}
+                    fillOpacity={0.85}
+                    filter="url(#glow-node)"
+                  />
+                )}
+                <text
+                  y={r + 14}
+                  textAnchor="middle"
+                  fill={COLOR_TEXT}
+                  fontSize="10"
+                  fontFamily="'Plus Jakarta Sans', sans-serif"
+                  pointerEvents="none"
+                >
+                  {shortenId(node.id)}
+                </text>
               </g>
             );
           })}
+        </svg>
 
-        {/* Nodes */}
-        {ns.map((node) => {
-          const isCenter = node.isCenter;
-          const r = isCenter
-            ? 26
-            : Math.max(7, Math.min(18, 7 + node.txCount * 0.8));
-          return (
-            <g
-              key={node.id}
-              transform={`translate(${node.x}, ${node.y})`}
-              style={{ cursor: isCenter ? "default" : "pointer" }}
-              onClick={() => {
-                if (!isCenter) onNavigate(node.id);
-              }}
-              onKeyDown={(e) => {
-                if (!isCenter && (e.key === "Enter" || e.key === " ")) {
-                  onNavigate(node.id);
-                }
-              }}
-              onTouchStart={(e) => {
-                if (!isCenter) {
-                  e.preventDefault();
-                  const touch = e.touches[0];
-                  if (touch) {
-                    showTooltipForTouch(node, touch.clientX, touch.clientY);
-                  }
-                  onNavigate(node.id);
-                }
-              }}
-              role={isCenter ? undefined : "button"}
-              tabIndex={isCenter ? undefined : 0}
-              onMouseEnter={(e) =>
-                setTooltip({ screenX: e.clientX, screenY: e.clientY, node })
-              }
-              onMouseLeave={() => setTooltip(null)}
-              onMouseMove={(e) =>
-                setTooltip((t) =>
-                  t ? { ...t, screenX: e.clientX, screenY: e.clientY } : null,
-                )
-              }
-              data-ocid={isCenter ? "wallet.canvas_target" : "wallet.button"}
-            >
-              {isCenter ? (
-                <>
-                  <circle
-                    r={r + 18}
-                    fill="none"
-                    stroke={COLOR_CENTER}
-                    strokeWidth={0.8}
-                    opacity={0.15}
-                  />
-                  <circle
-                    r={r + 10}
-                    fill="none"
-                    stroke={COLOR_CENTER}
-                    strokeWidth={0.8}
-                    opacity={0.25}
-                  />
-                  <circle
-                    r={r}
-                    fill="url(#center-grad)"
-                    filter="url(#glow-center)"
-                  />
-                </>
-              ) : (
-                <circle
-                  r={r}
-                  fill={getNodeGradient(node)}
-                  fillOpacity={0.85}
-                  filter="url(#glow-node)"
+        {/* Controls overlay */}
+        <div className="absolute top-3 right-3 flex flex-col gap-2">
+          {/* Toggle button */}
+          <button
+            type="button"
+            data-ocid="wallet.toggle"
+            onClick={() => setSettingsOpen((o) => !o)}
+            className="self-end flex items-center gap-1 text-xs px-2 py-1 rounded border bg-card/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm transition-colors"
+            title={settingsOpen ? "Collapse settings" : "Expand settings"}
+          >
+            {settingsOpen ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            <span>Settings</span>
+          </button>
+
+          {settingsOpen && (
+            <>
+              {/* Depth selector */}
+              <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5">
+                  Depth
+                  {depthLoading && (
+                    <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  {([1, 2, 3] as const).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      data-ocid="wallet.toggle"
+                      onClick={() => onDepthChange(d)}
+                      className={`text-xs px-2 py-1 rounded border transition-colors ${
+                        graphDepth === d
+                          ? "bg-neon-blue/20 border-neon-blue/50 text-neon-blue"
+                          : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  data-ocid="wallet.toggle"
+                  onClick={() => setEdgeMode("tx_count")}
+                  className={`text-xs px-2 py-1 rounded border transition-colors ${
+                    edgeMode === "tx_count"
+                      ? "bg-neon-blue/20 border-neon-blue/50 text-neon-blue"
+                      : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Count
+                </button>
+                <button
+                  type="button"
+                  data-ocid="wallet.toggle"
+                  onClick={() => setEdgeMode("total_amount")}
+                  className={`text-xs px-2 py-1 rounded border transition-colors ${
+                    edgeMode === "total_amount"
+                      ? "bg-neon-amber/20 border-neon-amber/50 text-neon-amber"
+                      : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Volume
+                </button>
+              </div>
+
+              {/* Max counterparties slider */}
+              <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
+                <div className="text-xs text-muted-foreground mb-1.5">
+                  Nodes: {maxCounterparties}
+                </div>
+                <Slider
+                  min={5}
+                  max={50}
+                  step={5}
+                  value={[maxCounterparties]}
+                  onValueChange={([v]) => onMaxCounterpartiesChange(v)}
+                  className="w-full"
                 />
-              )}
-              <text
-                y={r + 14}
-                textAnchor="middle"
-                fill={COLOR_TEXT}
-                fontSize="10"
-                fontFamily="'Plus Jakarta Sans', sans-serif"
-                pointerEvents="none"
-              >
-                {shortenId(node.id)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+              </div>
 
-      {/* Controls overlay */}
-      <div className="absolute top-3 right-3 flex flex-col gap-2">
-        {/* Toggle button */}
-        <button
-          type="button"
-          data-ocid="wallet.toggle"
-          onClick={() => setSettingsOpen((o) => !o)}
-          className="self-end flex items-center gap-1 text-xs px-2 py-1 rounded border bg-card/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm transition-colors"
-          title={settingsOpen ? "Collapse settings" : "Expand settings"}
-        >
-          {settingsOpen ? (
-            <ChevronDown className="h-3 w-3" />
-          ) : (
-            <ChevronRight className="h-3 w-3" />
+              {/* Tx limit slider */}
+              <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
+                <div className="text-xs text-muted-foreground mb-1.5">
+                  Tx Limit: {txLimit}
+                </div>
+                <Slider
+                  min={100}
+                  max={1000}
+                  step={100}
+                  value={[txLimit]}
+                  onValueChange={([v]) => onTxLimitChange(v)}
+                  className="w-full"
+                />
+              </div>
+
+              <Button
+                data-ocid="wallet.secondary_button"
+                size="sm"
+                variant="ghost"
+                onClick={runSim}
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground bg-card/80 border border-border"
+                title="Reset layout"
+              >
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Reset
+              </Button>
+            </>
           )}
-          <span>Settings</span>
-        </button>
+        </div>
 
-        {settingsOpen && (
-          <>
-            {/* Depth selector */}
-            <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm">
-              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5">
-                Depth
-                {depthLoading && (
-                  <Loader2 className="h-3 w-3 animate-spin ml-1" />
-                )}
-              </div>
-              <div className="flex gap-1">
-                {([1, 2, 3] as const).map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    data-ocid="wallet.toggle"
-                    onClick={() => onDepthChange(d)}
-                    className={`text-xs px-2 py-1 rounded border transition-colors ${
-                      graphDepth === d
-                        ? "bg-neon-blue/20 border-neon-blue/50 text-neon-blue"
-                        : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {d}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                data-ocid="wallet.toggle"
-                onClick={() => setEdgeMode("tx_count")}
-                className={`text-xs px-2 py-1 rounded border transition-colors ${
-                  edgeMode === "tx_count"
-                    ? "bg-neon-blue/20 border-neon-blue/50 text-neon-blue"
-                    : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Count
-              </button>
-              <button
-                type="button"
-                data-ocid="wallet.toggle"
-                onClick={() => setEdgeMode("total_amount")}
-                className={`text-xs px-2 py-1 rounded border transition-colors ${
-                  edgeMode === "total_amount"
-                    ? "bg-neon-amber/20 border-neon-amber/50 text-neon-amber"
-                    : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Volume
-              </button>
-            </div>
-
-            {/* Max counterparties slider */}
-            <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
-              <div className="text-xs text-muted-foreground mb-1.5">
-                Nodes: {maxCounterparties}
-              </div>
-              <Slider
-                min={5}
-                max={50}
-                step={5}
-                value={[maxCounterparties]}
-                onValueChange={([v]) => onMaxCounterpartiesChange(v)}
-                className="w-full"
-              />
-            </div>
-
-            {/* Tx limit slider */}
-            <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
-              <div className="text-xs text-muted-foreground mb-1.5">
-                Tx Limit: {txLimit}
-              </div>
-              <Slider
-                min={100}
-                max={1000}
-                step={100}
-                value={[txLimit]}
-                onValueChange={([v]) => onTxLimitChange(v)}
-                className="w-full"
-              />
-            </div>
-
-            <Button
-              data-ocid="wallet.secondary_button"
-              size="sm"
-              variant="ghost"
-              onClick={runSim}
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground bg-card/80 border border-border"
-              title="Reset layout"
-            >
-              <RotateCcw className="h-3 w-3 mr-1" />
-              Reset
-            </Button>
-          </>
+        {/* ICRC loading indicator */}
+        {icrcLoading && (
+          <div
+            className="absolute bottom-10 left-3 flex items-center gap-1.5 text-xs text-muted-foreground bg-card/80 border border-border rounded px-2 py-1 backdrop-blur-sm"
+            data-ocid="wallet.loading_state"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            <span>Loading tokens…</span>
+          </div>
         )}
       </div>
 
-      {/* ICRC loading indicator */}
-      {icrcLoading && (
-        <div
-          className="absolute bottom-10 left-3 flex items-center gap-1.5 text-xs text-muted-foreground bg-card/80 border border-border rounded px-2 py-1 backdrop-blur-sm"
-          data-ocid="wallet.loading_state"
-        >
-          <Loader2 className="h-3 w-3 animate-spin" />
-          <span>Loading tokens…</span>
-        </div>
-      )}
-
-      {/* Legend ? button */}
-      <div className="absolute bottom-3 right-3">
+      {/* Legend button — outside overflow-hidden so popover renders freely */}
+      <div className="absolute bottom-3 right-3 z-20">
         <button
           type="button"
           data-ocid="wallet.button"
           className="flex items-center justify-center w-7 h-7 rounded-full bg-card/80 border border-border text-muted-foreground hover:text-foreground backdrop-blur-sm transition-colors"
           title="Graph legend"
-          onMouseEnter={() => setLegendOpen(true)}
-          onMouseLeave={() => setLegendOpen(false)}
-          onFocus={() => setLegendOpen(true)}
-          onBlur={() => setLegendOpen(false)}
           onClick={() => setLegendOpen((o) => !o)}
         >
           <HelpCircle className="h-4 w-4" />
         </button>
 
         {legendOpen && (
-          <div
-            className="absolute bottom-9 right-0 w-64 bg-popover border border-border rounded-lg p-3 shadow-xl text-xs z-50"
-            onMouseEnter={() => setLegendOpen(true)}
-            onMouseLeave={() => setLegendOpen(false)}
-          >
+          <div className="absolute bottom-full right-0 mb-2 w-64 bg-popover border border-border rounded-lg p-3 shadow-xl text-xs z-20">
             <div className="font-semibold text-foreground mb-2 text-sm">
               How to read this graph
             </div>

@@ -87,7 +87,7 @@ export function useWallet() {
               tokenList.map((token) =>
                 fetchIcrcTransactions(
                   token.canisterId,
-                  acctId,
+                  principal.trim(),
                   txLimitRef.current,
                   token.symbol,
                   token.decimals,

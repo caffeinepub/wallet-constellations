@@ -433,6 +433,70 @@ export async function fetchIcrcTokenList(): Promise<IcrcTokenInfo[]> {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeIcrcTransaction(
+  raw: any,
+  decimals: number,
+): Transaction | null {
+  try {
+    const tx = raw?.transaction;
+    if (!tx) return null;
+
+    if (tx.transfer) {
+      const from = String(tx.transfer.from?.owner ?? tx.transfer.from ?? "");
+      const to = String(tx.transfer.to?.owner ?? tx.transfer.to ?? "");
+      const amount = Number(tx.transfer.amount ?? 0) / 10 ** decimals;
+      return {
+        timestamp: parseTimestamp(tx.timestamp ?? raw.timestamp),
+        from,
+        to,
+        amount,
+        blockIndex: Number(raw.id ?? raw.block_index ?? 0),
+      };
+    }
+
+    if (tx.mint) {
+      const to = String(tx.mint.to?.owner ?? tx.mint.to ?? "");
+      const amount = Number(tx.mint.amount ?? 0) / 10 ** decimals;
+      return {
+        timestamp: parseTimestamp(tx.timestamp ?? raw.timestamp),
+        from: "minting-account",
+        to,
+        amount,
+        blockIndex: Number(raw.id ?? raw.block_index ?? 0),
+      };
+    }
+
+    if (tx.burn) {
+      const from = String(tx.burn.from?.owner ?? tx.burn.from ?? "");
+      const amount = Number(tx.burn.amount ?? 0) / 10 ** decimals;
+      return {
+        timestamp: parseTimestamp(tx.timestamp ?? raw.timestamp),
+        from,
+        to: "burn-address",
+        amount,
+        blockIndex: Number(raw.id ?? raw.block_index ?? 0),
+      };
+    }
+
+    if (raw.from !== undefined && raw.to !== undefined) {
+      const from = String(raw.from?.owner ?? raw.from ?? "");
+      const to = String(raw.to?.owner ?? raw.to ?? "");
+      const amount = Number(raw.amount ?? 0) / 10 ** decimals;
+      return {
+        timestamp: parseTimestamp(raw.timestamp ?? raw.created_at),
+        from,
+        to,
+        amount,
+        blockIndex: Number(raw.id ?? raw.block_index ?? 0),
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export async function fetchIcrcTransactions(
   canisterId: string,
   accountId: string,
@@ -452,7 +516,7 @@ export async function fetchIcrcTransactions(
     if (rawList.length === 0) return [];
     const txs: Transaction[] = [];
     for (const raw of rawList) {
-      const tx = normalizeTransaction(raw);
+      const tx = normalizeIcrcTransaction(raw, decimals);
       if (tx) {
         tx.token = symbol;
         tx.decimals = decimals;

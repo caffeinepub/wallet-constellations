@@ -20,12 +20,15 @@ function addTokenAmount(
 
 function buildEdgeFromTx(
   acctLower: string,
+  displayIdLower: string,
   displayId: string,
   tx: Transaction,
   edgeMap: Map<string, EdgeAccumulator>,
 ) {
-  const isFrom = tx.from.toLowerCase() === acctLower;
-  const isTo = tx.to.toLowerCase() === acctLower;
+  const fromLower = tx.from.toLowerCase();
+  const toLower = tx.to.toLowerCase();
+  const isFrom = fromLower === acctLower || fromLower === displayIdLower;
+  const isTo = toLower === acctLower || toLower === displayIdLower;
   const counterparty = isFrom ? tx.to : isTo ? tx.from : null;
   if (!counterparty) return null;
 
@@ -83,12 +86,19 @@ export function buildGraph(
   maxCounterparties = 20,
 ): WalletGraph {
   const acctLower = accountIdentifier.toLowerCase();
+  const displayIdLower = displayId.toLowerCase();
 
   const edgeMap = new Map<string, EdgeAccumulator>();
   const counterpartyTx = new Map<string, number>();
 
   for (const tx of transactions) {
-    const cpLower = buildEdgeFromTx(acctLower, displayId, tx, edgeMap);
+    const cpLower = buildEdgeFromTx(
+      acctLower,
+      displayIdLower,
+      displayId,
+      tx,
+      edgeMap,
+    );
     if (cpLower) {
       counterpartyTx.set(cpLower, (counterpartyTx.get(cpLower) ?? 0) + 1);
     }
@@ -154,6 +164,7 @@ type DepthEdgeData = {
 function processTransactionsForDepth(
   txs: Transaction[],
   acctLower: string,
+  displayIdLower: string,
   existingNodes: Map<string, GraphNode>,
   skipExisting = false,
 ): { txCount: Map<string, number>; edgeData: Map<string, DepthEdgeData> } {
@@ -161,8 +172,10 @@ function processTransactionsForDepth(
   const edgeData = new Map<string, DepthEdgeData>();
 
   for (const tx of txs) {
-    const isFrom = tx.from.toLowerCase() === acctLower;
-    const isTo = tx.to.toLowerCase() === acctLower;
+    const fromLower = tx.from.toLowerCase();
+    const toLower = tx.to.toLowerCase();
+    const isFrom = fromLower === acctLower || fromLower === displayIdLower;
+    const isTo = toLower === acctLower || toLower === displayIdLower;
     const counterparty = isFrom ? tx.to : isTo ? tx.from : null;
     if (!counterparty) continue;
 
@@ -219,6 +232,7 @@ export function buildMultiDepthGraph(
   const allEdges = new Map<string, GraphEdge>();
 
   const centerIdLower = center.accountId.toLowerCase();
+  const centerDisplayIdLower = center.displayId.toLowerCase();
 
   allNodes.set(center.displayId.toLowerCase(), {
     id: center.displayId,
@@ -233,6 +247,7 @@ export function buildMultiDepthGraph(
     processTransactionsForDepth(
       center.transactions,
       centerIdLower,
+      centerDisplayIdLower,
       allNodes,
       false,
     );
@@ -269,10 +284,12 @@ export function buildMultiDepthGraph(
     if (!allNodes.has(d1Fetch.nodeId.toLowerCase())) continue;
 
     const d1AcctLower = d1Fetch.accountId.toLowerCase();
+    const d1DisplayIdLower = d1Fetch.nodeId.toLowerCase();
     const { txCount: d2TxCount, edgeData: d2EdgeData } =
       processTransactionsForDepth(
         d1Fetch.transactions,
         d1AcctLower,
+        d1DisplayIdLower,
         allNodes,
         true,
       );
@@ -312,10 +329,12 @@ export function buildMultiDepthGraph(
     if (!allNodes.has(d2Fetch.nodeId.toLowerCase())) continue;
 
     const d2AcctLower = d2Fetch.accountId.toLowerCase();
+    const d2DisplayIdLower = d2Fetch.nodeId.toLowerCase();
     const { txCount: d3TxCount, edgeData: d3EdgeData } =
       processTransactionsForDepth(
         d2Fetch.transactions,
         d2AcctLower,
+        d2DisplayIdLower,
         allNodes,
         true,
       );
