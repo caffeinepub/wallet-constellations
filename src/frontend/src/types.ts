@@ -4,6 +4,8 @@ export interface Transaction {
   to: string;
   amount: number; // ICP float
   blockIndex: number;
+  token?: string; // e.g. 'ICP', 'CHAT', 'ckBTC' — default 'ICP'
+  decimals?: number; // default 8
 }
 
 export interface GraphNode {
@@ -11,13 +13,20 @@ export interface GraphNode {
   isCenter: boolean;
   txCount: number;
   totalAmount: number;
+  depth?: number;
 }
 
 export interface GraphEdge {
   source: string;
   target: string;
   tx_count: number;
-  total_amount: number;
+  total_amount: number; // ICP only, for edge width
+  inCount: number;
+  outCount: number;
+  inAmountByToken?: Record<string, number>; // token symbol -> total amount in
+  outAmountByToken?: Record<string, number>; // token symbol -> total amount out
+  inCountByToken?: Record<string, number>; // token symbol -> count in
+  outCountByToken?: Record<string, number>; // token symbol -> count out
 }
 
 export interface WalletSummary {

@@ -1,6 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { RotateCcw } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  HelpCircle,
+  Loader2,
+  RotateCcw,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphEdge, GraphNode } from "../types";
 
@@ -9,7 +15,6 @@ type SimNode = GraphNode & { x: number; y: number; vx: number; vy: number };
 
 // Colors (raw hex for SVG drawing context – allowed per design-system rules)
 const COLOR_CENTER = "#4AA8FF";
-const COLOR_NODE = "#66C7FF";
 const COLOR_EDGE = "#66C7FF";
 const COLOR_TEXT = "#9FB0C8";
 const COLOR_STAR = "#ffffff";
@@ -81,7 +86,7 @@ function runStep(
 
 function shortenId(id: string) {
   if (id.length <= 12) return id;
-  return `${id.slice(0, 6)}…${id.slice(-4)}`;
+  return `${id.slice(0, 6)}\u2026${id.slice(-4)}`;
 }
 
 // Seeded star positions for consistent renders
@@ -106,6 +111,12 @@ interface TooltipState {
   node: SimNode;
 }
 
+interface HoveredEdge {
+  edgeKey: string;
+  screenX: number;
+  screenY: number;
+}
+
 interface ConstellationGraphProps {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -115,6 +126,25 @@ interface ConstellationGraphProps {
   maxCounterparties: number;
   onMaxCounterpartiesChange: (v: number) => void;
   isEmpty?: boolean;
+  graphDepth: number;
+  onDepthChange: (d: number) => void;
+  depthLoading?: boolean;
+  txLimit: number;
+  onTxLimitChange: (v: number) => void;
+  icrcLoading?: boolean;
+}
+
+function getNodeGradient(node: SimNode): string {
+  if (node.isCenter) return "url(#center-grad)";
+  const depth = node.depth ?? 1;
+  if (depth === 2) return "url(#node-grad-green)";
+  if (depth === 3) return "url(#node-grad-purple)";
+  const useAlt = node.id.charCodeAt(0) % 3 === 0;
+  return useAlt ? "url(#node-grad-alt)" : "url(#node-grad)";
+}
+
+function fmt(n: number) {
+  return n.toFixed(4);
 }
 
 export function ConstellationGraph({
@@ -125,6 +155,12 @@ export function ConstellationGraph({
   maxCounterparties,
   onMaxCounterpartiesChange,
   isEmpty = false,
+  graphDepth,
+  onDepthChange,
+  depthLoading = false,
+  txLimit,
+  onTxLimitChange,
+  icrcLoading = false,
 }: ConstellationGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -141,9 +177,13 @@ export function ConstellationGraph({
   const [, forceRender] = useState(0);
   const rafRef = useRef(0);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [edgeMode, setEdgeMode] = useState<"tx_count" | "total_amount">(
     edgeWeight,
   );
+  const [hoveredEdge, setHoveredEdge] = useState<HoveredEdge | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   // Track resize
   useEffect(() => {
@@ -205,6 +245,23 @@ export function ConstellationGraph({
     return () => cancelAnimationFrame(rafRef.current);
   }, [nodeKey, width, height]);
 
+  // Clear tooltip timer on unmount
+  useEffect(() => {
+    return () => {
+      if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+    };
+  }, []);
+
+  const showTooltipForTouch = (
+    node: SimNode,
+    screenX: number,
+    screenY: number,
+  ) => {
+    if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+    setTooltip({ screenX, screenY, node });
+    tooltipTimerRef.current = setTimeout(() => setTooltip(null), 2500);
+  };
+
   const ns = simRef.current;
 
   const maxWeight = useMemo(() => {
@@ -231,6 +288,18 @@ export function ConstellationGraph({
     }));
   }, [isEmpty]);
 
+  // Find hovered edge data for tooltip
+  const hoveredEdgeData = useMemo(() => {
+    if (!hoveredEdge) return null;
+    return (
+      propEdges.find(
+        (e) =>
+          `${e.source}|${e.target}` === hoveredEdge.edgeKey ||
+          `${e.target}|${e.source}` === hoveredEdge.edgeKey,
+      ) ?? null
+    );
+  }, [hoveredEdge, propEdges]);
+
   return (
     <div
       ref={containerRef}
@@ -241,7 +310,7 @@ export function ConstellationGraph({
         width={width}
         height={height}
         className="absolute inset-0"
-        style={{ display: "block" }}
+        style={{ display: "block", touchAction: "none" }}
         role="img"
         aria-label="ICP wallet transaction network constellation"
       >
@@ -281,6 +350,14 @@ export function ConstellationGraph({
             <stop offset="0%" stopColor="#FFD080" stopOpacity="1" />
             <stop offset="100%" stopColor="#F0B35A" stopOpacity="0.7" />
           </radialGradient>
+          <radialGradient id="node-grad-green" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#6FFFB4" stopOpacity="1" />
+            <stop offset="100%" stopColor="#3FE08C" stopOpacity="0.7" />
+          </radialGradient>
+          <radialGradient id="node-grad-purple" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#E0B0FF" stopOpacity="1" />
+            <stop offset="100%" stopColor="#C084FC" stopOpacity="0.7" />
+          </radialGradient>
         </defs>
 
         {/* Background stars */}
@@ -303,7 +380,7 @@ export function ConstellationGraph({
               cx={(star.x / 100) * width}
               cy={(star.y / 100) * height}
               r={star.r}
-              fill={COLOR_NODE}
+              fill={COLOR_CENTER}
               opacity={star.op}
             />
           ))}
@@ -323,16 +400,58 @@ export function ConstellationGraph({
             const dy = tgt.y - src.y;
             const cpx = (src.x + tgt.x) / 2 + dy * 0.22;
             const cpy = (src.y + tgt.y) / 2 - dx * 0.22;
+            const pathD = `M${src.x},${src.y} Q${cpx},${cpy} ${tgt.x},${tgt.y}`;
+            const edgeKey = `${edge.source}|${edge.target}`;
             return (
-              <path
-                key={`${edge.source}-${edge.target}`}
-                d={`M ${src.x} ${src.y} Q ${cpx} ${cpy} ${tgt.x} ${tgt.y}`}
-                fill="none"
-                stroke={COLOR_EDGE}
-                strokeWidth={strokeW}
-                opacity={opacity}
-                filter="url(#glow-edge)"
-              />
+              <g key={edgeKey}>
+                <path
+                  d={pathD}
+                  fill="none"
+                  stroke={COLOR_EDGE}
+                  strokeWidth={strokeW}
+                  opacity={opacity}
+                  filter="url(#glow-edge)"
+                />
+                {/* Transparent hit area for hover/touch */}
+                <path
+                  d={pathD}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth={12}
+                  opacity={0}
+                  style={{ cursor: "crosshair" }}
+                  onMouseEnter={(e) =>
+                    setHoveredEdge({
+                      edgeKey,
+                      screenX: e.clientX,
+                      screenY: e.clientY,
+                    })
+                  }
+                  onMouseMove={(e) =>
+                    setHoveredEdge((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            screenX: e.clientX,
+                            screenY: e.clientY,
+                          }
+                        : prev,
+                    )
+                  }
+                  onMouseLeave={() => setHoveredEdge(null)}
+                  onTouchStart={(e) => {
+                    const touch = e.touches[0];
+                    if (touch) {
+                      setHoveredEdge({
+                        edgeKey,
+                        screenX: touch.clientX,
+                        screenY: touch.clientY,
+                      });
+                      setTimeout(() => setHoveredEdge(null), 2500);
+                    }
+                  }}
+                />
+              </g>
             );
           })}
 
@@ -342,7 +461,6 @@ export function ConstellationGraph({
           const r = isCenter
             ? 26
             : Math.max(7, Math.min(18, 7 + node.txCount * 0.8));
-          const useAlt = !isCenter && node.id.charCodeAt(0) % 3 === 0;
           return (
             <g
               key={node.id}
@@ -353,6 +471,16 @@ export function ConstellationGraph({
               }}
               onKeyDown={(e) => {
                 if (!isCenter && (e.key === "Enter" || e.key === " ")) {
+                  onNavigate(node.id);
+                }
+              }}
+              onTouchStart={(e) => {
+                if (!isCenter) {
+                  e.preventDefault();
+                  const touch = e.touches[0];
+                  if (touch) {
+                    showTooltipForTouch(node, touch.clientX, touch.clientY);
+                  }
                   onNavigate(node.id);
                 }
               }}
@@ -394,7 +522,7 @@ export function ConstellationGraph({
               ) : (
                 <circle
                   r={r}
-                  fill={useAlt ? "url(#node-grad-alt)" : "url(#node-grad)"}
+                  fill={getNodeGradient(node)}
                   fillOpacity={0.85}
                   filter="url(#glow-node)"
                 />
@@ -416,62 +544,239 @@ export function ConstellationGraph({
 
       {/* Controls overlay */}
       <div className="absolute top-3 right-3 flex flex-col gap-2">
-        <div className="flex gap-1.5">
-          <button
-            type="button"
-            data-ocid="wallet.toggle"
-            onClick={() => setEdgeMode("tx_count")}
-            className={`text-xs px-2 py-1 rounded border transition-colors ${
-              edgeMode === "tx_count"
-                ? "bg-neon-blue/20 border-neon-blue/50 text-neon-blue"
-                : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Count
-          </button>
-          <button
-            type="button"
-            data-ocid="wallet.toggle"
-            onClick={() => setEdgeMode("total_amount")}
-            className={`text-xs px-2 py-1 rounded border transition-colors ${
-              edgeMode === "total_amount"
-                ? "bg-neon-amber/20 border-neon-amber/50 text-neon-amber"
-                : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Volume
-          </button>
-        </div>
-
-        {/* Max counterparties slider */}
-        <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
-          <div className="text-xs text-muted-foreground mb-1.5">
-            Nodes: {maxCounterparties}
-          </div>
-          <Slider
-            min={5}
-            max={50}
-            step={5}
-            value={[maxCounterparties]}
-            onValueChange={([v]) => onMaxCounterpartiesChange(v)}
-            className="w-full"
-          />
-        </div>
-
-        <Button
-          data-ocid="wallet.secondary_button"
-          size="sm"
-          variant="ghost"
-          onClick={runSim}
-          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground bg-card/80 border border-border"
-          title="Reset layout"
+        {/* Toggle button */}
+        <button
+          type="button"
+          data-ocid="wallet.toggle"
+          onClick={() => setSettingsOpen((o) => !o)}
+          className="self-end flex items-center gap-1 text-xs px-2 py-1 rounded border bg-card/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm transition-colors"
+          title={settingsOpen ? "Collapse settings" : "Expand settings"}
         >
-          <RotateCcw className="h-3 w-3 mr-1" />
-          Reset
-        </Button>
+          {settingsOpen ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
+          <span>Settings</span>
+        </button>
+
+        {settingsOpen && (
+          <>
+            {/* Depth selector */}
+            <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5">
+                Depth
+                {depthLoading && (
+                  <Loader2 className="h-3 w-3 animate-spin ml-1" />
+                )}
+              </div>
+              <div className="flex gap-1">
+                {([1, 2, 3] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    data-ocid="wallet.toggle"
+                    onClick={() => onDepthChange(d)}
+                    className={`text-xs px-2 py-1 rounded border transition-colors ${
+                      graphDepth === d
+                        ? "bg-neon-blue/20 border-neon-blue/50 text-neon-blue"
+                        : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                data-ocid="wallet.toggle"
+                onClick={() => setEdgeMode("tx_count")}
+                className={`text-xs px-2 py-1 rounded border transition-colors ${
+                  edgeMode === "tx_count"
+                    ? "bg-neon-blue/20 border-neon-blue/50 text-neon-blue"
+                    : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Count
+              </button>
+              <button
+                type="button"
+                data-ocid="wallet.toggle"
+                onClick={() => setEdgeMode("total_amount")}
+                className={`text-xs px-2 py-1 rounded border transition-colors ${
+                  edgeMode === "total_amount"
+                    ? "bg-neon-amber/20 border-neon-amber/50 text-neon-amber"
+                    : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Volume
+              </button>
+            </div>
+
+            {/* Max counterparties slider */}
+            <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
+              <div className="text-xs text-muted-foreground mb-1.5">
+                Nodes: {maxCounterparties}
+              </div>
+              <Slider
+                min={5}
+                max={50}
+                step={5}
+                value={[maxCounterparties]}
+                onValueChange={([v]) => onMaxCounterpartiesChange(v)}
+                className="w-full"
+              />
+            </div>
+
+            {/* Tx limit slider */}
+            <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
+              <div className="text-xs text-muted-foreground mb-1.5">
+                Tx Limit: {txLimit}
+              </div>
+              <Slider
+                min={100}
+                max={1000}
+                step={100}
+                value={[txLimit]}
+                onValueChange={([v]) => onTxLimitChange(v)}
+                className="w-full"
+              />
+            </div>
+
+            <Button
+              data-ocid="wallet.secondary_button"
+              size="sm"
+              variant="ghost"
+              onClick={runSim}
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground bg-card/80 border border-border"
+              title="Reset layout"
+            >
+              <RotateCcw className="h-3 w-3 mr-1" />
+              Reset
+            </Button>
+          </>
+        )}
       </div>
 
-      {/* Tooltip */}
+      {/* ICRC loading indicator */}
+      {icrcLoading && (
+        <div
+          className="absolute bottom-10 left-3 flex items-center gap-1.5 text-xs text-muted-foreground bg-card/80 border border-border rounded px-2 py-1 backdrop-blur-sm"
+          data-ocid="wallet.loading_state"
+        >
+          <Loader2 className="h-3 w-3 animate-spin" />
+          <span>Loading tokens…</span>
+        </div>
+      )}
+
+      {/* Legend ? button */}
+      <div className="absolute bottom-3 right-3">
+        <button
+          type="button"
+          data-ocid="wallet.button"
+          className="flex items-center justify-center w-7 h-7 rounded-full bg-card/80 border border-border text-muted-foreground hover:text-foreground backdrop-blur-sm transition-colors"
+          title="Graph legend"
+          onMouseEnter={() => setLegendOpen(true)}
+          onMouseLeave={() => setLegendOpen(false)}
+          onFocus={() => setLegendOpen(true)}
+          onBlur={() => setLegendOpen(false)}
+          onClick={() => setLegendOpen((o) => !o)}
+        >
+          <HelpCircle className="h-4 w-4" />
+        </button>
+
+        {legendOpen && (
+          <div
+            className="absolute bottom-9 right-0 w-64 bg-popover border border-border rounded-lg p-3 shadow-xl text-xs z-50"
+            onMouseEnter={() => setLegendOpen(true)}
+            onMouseLeave={() => setLegendOpen(false)}
+          >
+            <div className="font-semibold text-foreground mb-2 text-sm">
+              How to read this graph
+            </div>
+
+            <div className="space-y-2 text-muted-foreground">
+              <div>
+                <div className="font-medium text-foreground mb-0.5">
+                  Node colors (dots)
+                </div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="inline-block w-3 h-3 rounded-full bg-[#4AA8FF] shrink-0" />
+                  <span>
+                    <strong className="text-foreground">Blue (large)</strong> —
+                    your wallet (the center)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="inline-block w-3 h-3 rounded-full bg-[#88D8FF] shrink-0" />
+                  <span>
+                    <strong className="text-foreground">Light blue</strong> —
+                    wallets that transacted directly with you (depth 1)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="inline-block w-3 h-3 rounded-full bg-[#3FE08C] shrink-0" />
+                  <span>
+                    <strong className="text-foreground">Green</strong> —
+                    2nd-degree connections (depth 2)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-full bg-[#C084FC] shrink-0" />
+                  <span>
+                    <strong className="text-foreground">Purple</strong> —
+                    3rd-degree connections (depth 3)
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-medium text-foreground mb-0.5">
+                  Lines (edges)
+                </div>
+                <div>
+                  <strong className="text-foreground">Thicker line</strong> =
+                  more transactions or higher ICP volume between those two
+                  wallets
+                </div>
+              </div>
+
+              <div>
+                <div className="font-medium text-foreground mb-0.5">
+                  Hover a line to see
+                </div>
+                <div>
+                  <span className="text-green-400">↑ In</span> — tokens received
+                  INTO your wallet from that counterparty
+                </div>
+                <div>
+                  <span className="text-orange-400">↓ Out</span> — tokens sent
+                  FROM your wallet to that counterparty
+                </div>
+                <div className="mt-0.5">
+                  Net flow shows whether you are a net receiver or sender with
+                  that wallet.
+                </div>
+              </div>
+
+              <div>
+                <div className="font-medium text-foreground mb-0.5">
+                  Clicking a node
+                </div>
+                <div>
+                  Navigates to that wallet and makes it the new center of the
+                  graph.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Node tooltip */}
       {tooltip && (
         <div
           className="fixed z-50 pointer-events-none bg-popover border border-border rounded-md px-3 py-2 text-xs shadow-lg"
@@ -488,7 +793,77 @@ export function ConstellationGraph({
             <span className="text-foreground">{tooltip.node.txCount}</span>
           </div>
           {!tooltip.node.isCenter && (
-            <div className="text-neon-blue mt-0.5">Click to explore →</div>
+            <div className="text-neon-blue mt-0.5">Click to explore \u2192</div>
+          )}
+        </div>
+      )}
+
+      {/* Edge hover tooltip */}
+      {hoveredEdge && hoveredEdgeData && (
+        <div
+          className="fixed z-50 pointer-events-none bg-popover border border-border rounded-md px-3 py-2 text-xs shadow-lg min-w-[160px]"
+          style={{
+            left: hoveredEdge.screenX + 14,
+            top: hoveredEdge.screenY - 14,
+          }}
+        >
+          {hoveredEdgeData.inAmountByToken ||
+          hoveredEdgeData.outAmountByToken ? (
+            <>
+              {/* Per-token breakdown */}
+              {(() => {
+                const allTokens = new Set<string>([
+                  ...Object.keys(hoveredEdgeData.inAmountByToken ?? {}),
+                  ...Object.keys(hoveredEdgeData.outAmountByToken ?? {}),
+                ]);
+                const rows = [...allTokens].map((token) => {
+                  const inAmt = hoveredEdgeData.inAmountByToken?.[token] ?? 0;
+                  const outAmt = hoveredEdgeData.outAmountByToken?.[token] ?? 0;
+                  const inCnt = hoveredEdgeData.inCountByToken?.[token] ?? 0;
+                  const outCnt = hoveredEdgeData.outCountByToken?.[token] ?? 0;
+                  return { token, inAmt, outAmt, inCnt, outCnt };
+                });
+                return rows.map(({ token, inAmt, outAmt, inCnt, outCnt }) => (
+                  <div key={token} className="mb-1.5 last:mb-0">
+                    <div className="font-semibold text-foreground text-[11px] mb-0.5">
+                      ${token}
+                    </div>
+                    {inCnt > 0 && (
+                      <div className="text-green-400">
+                        \u2191 In: {inCnt} tx / {fmt(inAmt)} ${token}
+                      </div>
+                    )}
+                    {outCnt > 0 && (
+                      <div className="text-orange-400">
+                        \u2193 Out: {outCnt} tx / {fmt(outAmt)} ${token}
+                      </div>
+                    )}
+                    {token === "ICP" && (inCnt > 0 || outCnt > 0) && (
+                      <div
+                        className={`mt-0.5 font-medium ${
+                          inAmt - outAmt >= 0
+                            ? "text-green-300"
+                            : "text-orange-300"
+                        }`}
+                      >
+                        Net: {inAmt - outAmt >= 0 ? "+" : ""}
+                        {fmt(inAmt - outAmt)} $ICP
+                      </div>
+                    )}
+                  </div>
+                ));
+              })()}
+            </>
+          ) : (
+            /* Fallback: simple display */
+            <div className="flex gap-3 text-muted-foreground">
+              <span className="text-green-400">
+                \u2191 {hoveredEdgeData.inCount} in
+              </span>
+              <span className="text-orange-400">
+                \u2193 {hoveredEdgeData.outCount} out
+              </span>
+            </div>
           )}
         </div>
       )}

@@ -1,6 +1,10 @@
+import { Principal } from "@dfinity/principal";
 import type { ExplorerError, Transaction } from "../types";
 
 const LEDGER_API_BASE = "https://ledger-api.internetcomputer.org";
+const ICRC_API_BASE = "https://icrc-api.internetcomputer.org";
+
+export const DEFAULT_TX_LIMIT = 100;
 
 function e8sToIcp(val: string | number | bigint): number {
   const n = typeof val === "bigint" ? Number(val) : Number(val);
@@ -11,20 +15,176 @@ function parseTimestamp(raw: string | number | null | undefined): string {
   if (!raw) return new Date().toISOString();
   if (typeof raw === "number") {
     const asMs =
-      raw > 1e15
-        ? Math.floor(raw / 1e6) // nanoseconds → ms
-        : raw > 1e12
-          ? raw // already ms
-          : raw * 1000; // seconds → ms
+      raw > 1e15 ? Math.floor(raw / 1e6) : raw > 1e12 ? raw : raw * 1000;
     return new Date(asMs).toISOString();
   }
   return new Date(raw).toISOString();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeTransaction(raw: any): Transaction | null {
+// SHA-224 implementation (pure JS, no external deps)
+function sha224(data: Uint8Array): Uint8Array {
+  let h0 = 0xc1059ed8 | 0;
+  let h1 = 0x367cd507 | 0;
+  let h2 = 0x3070dd17 | 0;
+  let h3 = 0xf70e5939 | 0;
+  let h4 = 0xffc00b31 | 0;
+  let h5 = 0x68581511 | 0;
+  let h6 = 0x64f98fa7 | 0;
+  let h7 = 0xbefa4fa4 | 0;
+
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
+    0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+    0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+    0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+    0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+    0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+
+  const rotr = (x: number, n: number) => ((x >>> n) | (x << (32 - n))) >>> 0;
+
+  const msgLen = data.length;
+  const bitLen = msgLen * 8;
+  const padLen = (msgLen + 9 + 63) & ~63;
+  const msg = new Uint8Array(padLen);
+  msg.set(data);
+  msg[msgLen] = 0x80;
+  const view = new DataView(msg.buffer);
+  view.setUint32(padLen - 4, bitLen >>> 0, false);
+  view.setUint32(padLen - 8, Math.floor(bitLen / 0x100000000), false);
+
+  for (let i = 0; i < padLen; i += 64) {
+    const w = new Int32Array(64);
+    for (let j = 0; j < 16; j++) {
+      w[j] = view.getInt32(i + j * 4, false);
+    }
+    for (let j = 16; j < 64; j++) {
+      const s0 =
+        rotr(w[j - 15] >>> 0, 7) ^
+        rotr(w[j - 15] >>> 0, 18) ^
+        ((w[j - 15] >>> 0) >>> 3);
+      const s1 =
+        rotr(w[j - 2] >>> 0, 17) ^
+        rotr(w[j - 2] >>> 0, 19) ^
+        ((w[j - 2] >>> 0) >>> 10);
+      w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+    }
+    // biome-ignore lint/style/useSingleVarDeclarator: SHA256 implementation requires compact multi-var declaration
+    let a = h0,
+      b = h1,
+      c = h2,
+      d = h3,
+      e = h4,
+      f = h5,
+      g = h6,
+      h = h7;
+    for (let j = 0; j < 64; j++) {
+      const S1 = rotr(e >>> 0, 6) ^ rotr(e >>> 0, 11) ^ rotr(e >>> 0, 25);
+      const ch = ((e & f) ^ (~e & g)) | 0;
+      const temp1 = (h + S1 + ch + K[j] + w[j]) | 0;
+      const S0 = rotr(a >>> 0, 2) ^ rotr(a >>> 0, 13) ^ rotr(a >>> 0, 22);
+      const maj = ((a & b) ^ (a & c) ^ (b & c)) | 0;
+      const temp2 = (S0 + maj) | 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) | 0;
+    }
+    h0 = (h0 + a) | 0;
+    h1 = (h1 + b) | 0;
+    h2 = (h2 + c) | 0;
+    h3 = (h3 + d) | 0;
+    h4 = (h4 + e) | 0;
+    h5 = (h5 + f) | 0;
+    h6 = (h6 + g) | 0;
+    h7 = (h7 + h) | 0;
+  }
+
+  const result = new Uint8Array(28);
+  const rv = new DataView(result.buffer);
+  rv.setUint32(0, h0 >>> 0, false);
+  rv.setUint32(4, h1 >>> 0, false);
+  rv.setUint32(8, h2 >>> 0, false);
+  rv.setUint32(12, h3 >>> 0, false);
+  rv.setUint32(16, h4 >>> 0, false);
+  rv.setUint32(20, h5 >>> 0, false);
+  rv.setUint32(24, h6 >>> 0, false);
+  return result;
+}
+
+function crc32(data: Uint8Array): number {
+  let crc = 0xffffffff;
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c;
+  }
+  for (const byte of data) crc = table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function principalToAccountIdentifier(input: string): string | null {
+  const trimmed = input.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return trimmed.toLowerCase();
   try {
+    const principal = Principal.fromText(trimmed);
+    const principalBytes = principal.toUint8Array();
+    const domainSep = new TextEncoder().encode("\x0Aaccount-id");
+    const subaccount = new Uint8Array(32);
+    const msg = new Uint8Array(
+      domainSep.length + principalBytes.length + subaccount.length,
+    );
+    msg.set(domainSep, 0);
+    msg.set(principalBytes, domainSep.length);
+    msg.set(subaccount, domainSep.length + principalBytes.length);
+    const hash = sha224(msg);
+    const checksum = crc32(hash);
+    const checksumBytes = new Uint8Array(4);
+    new DataView(checksumBytes.buffer).setUint32(0, checksum, false);
+    const accountIdBytes = new Uint8Array(32);
+    accountIdBytes.set(checksumBytes, 0);
+    accountIdBytes.set(hash, 4);
+    return Array.from(accountIdBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normalizeTransaction(raw: any): Transaction | null {
+  try {
+    if (
+      raw?.from_account_identifier !== undefined ||
+      raw?.to_account_identifier !== undefined
+    ) {
+      const amount = raw.amount ? e8sToIcp(raw.amount) : 0;
+      return {
+        timestamp: parseTimestamp(raw.created_at ?? raw.timestamp),
+        from: String(raw.from_account_identifier ?? ""),
+        to: String(raw.to_account_identifier ?? ""),
+        amount,
+        blockIndex: Number(
+          raw.block_height ??
+            raw.block_identifier?.index ??
+            raw.block_index ??
+            0,
+        ),
+      };
+    }
     if (raw?.transaction?.operations) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ops = raw.transaction.operations as any[];
       const txOps = ops.filter(
         (o) => o.type === "TRANSACTION" || o.type === "Transfer",
@@ -68,7 +228,6 @@ function normalizeTransaction(raw: any): Transaction | null {
         };
       }
     }
-
     if (raw?.from && raw?.to) {
       let amount = 0;
       if (typeof raw.amount === "object" && raw.amount !== null) {
@@ -90,7 +249,6 @@ function normalizeTransaction(raw: any): Transaction | null {
         blockIndex: Number(raw.id ?? raw.block_index ?? raw.blockIndex ?? 0),
       };
     }
-
     const op = raw?.transaction?.operation ?? raw?.transaction?.operations?.[0];
     const transfer = op?.Transfer ?? op?.transfer ?? raw?.transaction?.transfer;
     if (transfer) {
@@ -122,30 +280,36 @@ function normalizeTransaction(raw: any): Transaction | null {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractTransactionArray(data: any): any[] {
+export function extractTransactionArray(data: any): any[] {
   if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.blocks)) return data.blocks;
   if (Array.isArray(data?.transactions)) return data.transactions;
   if (Array.isArray(data?.data?.transactions)) return data.data.transactions;
-  if (Array.isArray(data?.blocks)) return data.blocks;
   if (Array.isArray(data?.data?.blocks)) return data.data.blocks;
   if (Array.isArray(data?.result)) return data.result;
   return [];
 }
 
 export type FetchResult =
-  | { ok: true; transactions: Transaction[] }
+  | { ok: true; transactions: Transaction[]; accountIdentifier?: string }
   | { ok: false; error: ExplorerError };
 
 export async function fetchWalletTransactions(
   principal: string,
   proxyUrl?: string,
+  limit: number = DEFAULT_TX_LIMIT,
 ): Promise<FetchResult> {
   if (!principal || principal.trim() === "") {
     return { ok: false, error: "invalid" };
   }
 
+  const accountId = principalToAccountIdentifier(principal.trim());
+  if (!accountId) {
+    return { ok: false, error: "invalid" };
+  }
+
   const base = proxyUrl ? proxyUrl.replace(/\/$/, "") : LEDGER_API_BASE;
-  const url = `${base}/api/v1/accounts/${encodeURIComponent(principal.trim())}/transactions`;
+  const url = `${base}/accounts/${encodeURIComponent(accountId)}/transactions?limit=${limit}&sort_by=-block_height`;
 
   let response: Response;
   try {
@@ -188,7 +352,7 @@ export async function fetchWalletTransactions(
     return { ok: false, error: "parse" };
   }
 
-  return { ok: true, transactions };
+  return { ok: true, transactions, accountIdentifier: accountId };
 }
 
 export async function checkExplorerReachable(): Promise<boolean> {
@@ -214,28 +378,14 @@ export function testParser(): boolean {
   try {
     const sample = [
       {
-        block_identifier: { index: 1 },
-        timestamp: 1700000000000,
-        transaction: {
-          operations: [
-            {
-              type: "TRANSACTION",
-              account: { address: "aaaaa-aa" },
-              amount: {
-                value: "-100000000",
-                currency: { symbol: "ICP", decimals: 8 },
-              },
-            },
-            {
-              type: "TRANSACTION",
-              account: { address: "bbbbb-bb" },
-              amount: {
-                value: "100000000",
-                currency: { symbol: "ICP", decimals: 8 },
-              },
-            },
-          ],
-        },
+        block_height: "1",
+        from_account_identifier:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00",
+        to_account_identifier:
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb00",
+        amount: "100000000",
+        created_at: 1700000000,
+        transfer_type: "send",
       },
     ];
     for (const r of sample) {
@@ -245,5 +395,72 @@ export function testParser(): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+// ── ICRC multi-token support ──────────────────────────────────────────────────
+
+export interface IcrcTokenInfo {
+  canisterId: string;
+  symbol: string;
+  decimals: number;
+}
+
+let icrcTokenListCache: IcrcTokenInfo[] | null = null;
+
+export async function fetchIcrcTokenList(): Promise<IcrcTokenInfo[]> {
+  if (icrcTokenListCache) return icrcTokenListCache;
+  try {
+    const res = await fetch(`${ICRC_API_BASE}/api/v1/ledgers`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list = Array.isArray(data)
+      ? data
+      : (data?.data ?? data?.ledgers ?? []);
+    icrcTokenListCache = (Array.isArray(list) ? list : [])
+      .map((item: any) => ({
+        canisterId: item.canister_id ?? item.id ?? "",
+        symbol: item.symbol ?? item.token_symbol ?? "UNKNOWN",
+        decimals: item.decimals ?? 8,
+      }))
+      .filter((t: IcrcTokenInfo) => t.canisterId);
+    return icrcTokenListCache ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchIcrcTransactions(
+  canisterId: string,
+  accountId: string,
+  limit = 100,
+  symbol = "UNKNOWN",
+  decimals = 8,
+): Promise<Transaction[]> {
+  try {
+    const url = `${ICRC_API_BASE}/api/v1/ledgers/${encodeURIComponent(canisterId)}/accounts/${encodeURIComponent(accountId)}/transactions?limit=${limit}&sort_by=-block_height`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const rawList = extractTransactionArray(data);
+    if (rawList.length === 0) return [];
+    const txs: Transaction[] = [];
+    for (const raw of rawList) {
+      const tx = normalizeTransaction(raw);
+      if (tx) {
+        tx.token = symbol;
+        tx.decimals = decimals;
+        txs.push(tx);
+      }
+    }
+    return txs;
+  } catch {
+    return [];
   }
 }

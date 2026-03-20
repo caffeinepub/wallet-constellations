@@ -13,6 +13,7 @@ import type { TimeRange } from "../types";
 
 interface TopBarProps {
   onSearch: (principal: string) => void;
+  onReset: () => void;
   loading: boolean;
   timeRange: TimeRange;
   onTimeRangeChange: (r: TimeRange) => void;
@@ -20,6 +21,7 @@ interface TopBarProps {
 
 export function TopBar({
   onSearch,
+  onReset,
   loading,
   timeRange,
   onTimeRangeChange,
@@ -39,8 +41,13 @@ export function TopBar({
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-md">
       <div className="flex items-center justify-between px-4 py-3">
-        {/* Logo + Title */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Logo + Title – clickable to reset */}
+        <button
+          type="button"
+          onClick={onReset}
+          className="flex items-center gap-3 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+          data-ocid="wallet.link"
+        >
           <div className="flex h-9 w-9 items-center justify-center rounded-full border border-neon-blue/30 bg-neon-blue/10">
             <Star className="h-4 w-4 text-neon-blue" fill="currentColor" />
           </div>
@@ -52,7 +59,7 @@ export function TopBar({
               ICP Wallet Visualizer
             </div>
           </div>
-        </div>
+        </button>
 
         {/* Search strip */}
         <div className="flex flex-1 items-center gap-2 mx-4 max-w-2xl">

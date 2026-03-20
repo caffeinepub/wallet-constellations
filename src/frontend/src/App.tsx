@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Toaster } from "@/components/ui/sonner";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Cell,
   Legend,
@@ -44,7 +44,7 @@ function NetworkBreakdown({
   const data = top5.map((n) => {
     const edgeTo = edges.find((e) => e.source === n.id || e.target === n.id);
     return {
-      name: n.id.length > 10 ? `${n.id.slice(0, 6)}…` : n.id,
+      name: n.id.length > 10 ? `${n.id.slice(0, 6)}\u2026` : n.id,
       value:
         edgeWeight === "tx_count"
           ? (edgeTo?.tx_count ?? n.txCount)
@@ -130,19 +130,40 @@ export default function App() {
     setTimeRange,
     maxCounterparties,
     setMaxCounterparties,
+    txLimit,
+    setTxLimit,
     loading,
     errorType,
     walletData,
     navigate,
     goBack,
+    jumpTo,
     reset,
     proxyUrl,
     setProxyUrl,
+    graphDepth,
+    setGraphDepth,
+    depthLoading,
+    icrcLoading,
   } = useWallet();
 
   const [edgeWeight, setEdgeWeight] = useState<"tx_count" | "total_amount">(
     "tx_count",
   );
+
+  // Refs so the txLimit-change effect doesn't re-run on principal/navigate changes
+  const currentPrincipalRef = useRef(currentPrincipal);
+  currentPrincipalRef.current = currentPrincipal;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
+  // Re-fetch when txLimit changes (if a principal is already loaded)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only triggers on txLimit change
+  useEffect(() => {
+    if (currentPrincipalRef.current) {
+      navigateRef.current(currentPrincipalRef.current);
+    }
+  }, [txLimit]);
 
   const hasData = !!walletData;
   const graphNodes = walletData?.graph.nodes ?? [];
@@ -156,6 +177,7 @@ export default function App() {
 
       <TopBar
         onSearch={navigate}
+        onReset={reset}
         loading={loading}
         timeRange={timeRange}
         onTimeRangeChange={setTimeRange}
@@ -166,6 +188,7 @@ export default function App() {
         currentPrincipal={currentPrincipal}
         onBack={goBack}
         onReset={reset}
+        onJumpTo={jumpTo}
       />
 
       <main className="flex-1 flex flex-col gap-4 p-4 max-w-screen-2xl mx-auto w-full">
@@ -181,10 +204,10 @@ export default function App() {
           </div>
         )}
 
-        {/* Main two-column layout */}
-        <div className="flex gap-4">
+        {/* Main layout — stacks on mobile, side-by-side on lg+ */}
+        <div className="flex flex-col lg:flex-row gap-4">
           {(hasData || loading) && (
-            <div className="w-72 shrink-0">
+            <div className="w-full lg:w-72 shrink-0">
               <OverviewPanel
                 principal={currentPrincipal}
                 walletData={walletData}
@@ -193,7 +216,10 @@ export default function App() {
             </div>
           )}
 
-          <div className="flex-1 relative" style={{ minHeight: "520px" }}>
+          <div
+            className="flex-1 relative"
+            style={{ minHeight: "520px", height: "520px" }}
+          >
             {loading ? (
               <div
                 className="flex items-center justify-center h-full min-h-[520px] rounded-lg border border-border bg-card"
@@ -201,7 +227,9 @@ export default function App() {
               >
                 <div className="flex flex-col items-center gap-3 text-muted-foreground">
                   <Loader2 className="h-8 w-8 animate-spin text-neon-blue" />
-                  <span className="text-sm">Fetching constellation data…</span>
+                  <span className="text-sm">
+                    Fetching constellation data\u2026
+                  </span>
                 </div>
               </div>
             ) : hasData ? (
@@ -214,6 +242,12 @@ export default function App() {
                   edgeWeight={edgeWeight}
                   onMaxCounterpartiesChange={setMaxCounterparties}
                   maxCounterparties={maxCounterparties}
+                  graphDepth={graphDepth}
+                  onDepthChange={(d) => setGraphDepth(d as 1 | 2 | 3)}
+                  depthLoading={depthLoading}
+                  txLimit={txLimit}
+                  onTxLimitChange={setTxLimit}
+                  icrcLoading={icrcLoading}
                 />
                 <StatusPanel />
               </div>
@@ -223,6 +257,7 @@ export default function App() {
                   variant={emptyVariant}
                   onProxySet={setProxyUrl}
                   proxyUrl={proxyUrl}
+                  onSearch={navigate}
                 />
                 <StatusPanel />
               </div>
