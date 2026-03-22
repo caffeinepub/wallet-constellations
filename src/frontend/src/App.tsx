@@ -204,6 +204,11 @@ export default function App() {
           </div>
         )}
 
+        {/* System status bar — one line above the graph */}
+        <div className="flex justify-end">
+          <StatusPanel />
+        </div>
+
         {/* Main layout — stacks on mobile, side-by-side on lg+ */}
         <div className="flex flex-col lg:flex-row gap-4">
           {(hasData || loading) && (
@@ -249,7 +254,6 @@ export default function App() {
                   onTxLimitChange={setTxLimit}
                   icrcLoading={icrcLoading}
                 />
-                <StatusPanel />
               </div>
             ) : (
               <div className="relative h-full min-h-[520px] rounded-lg border border-border bg-card overflow-hidden">
@@ -259,7 +263,6 @@ export default function App() {
                   proxyUrl={proxyUrl}
                   onSearch={navigate}
                 />
-                <StatusPanel />
               </div>
             )}
           </div>

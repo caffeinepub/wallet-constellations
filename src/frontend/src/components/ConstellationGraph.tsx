@@ -139,8 +139,7 @@ function getNodeGradient(node: SimNode): string {
   const depth = node.depth ?? 1;
   if (depth === 2) return "url(#node-grad-green)";
   if (depth === 3) return "url(#node-grad-purple)";
-  const useAlt = node.id.charCodeAt(0) % 3 === 0;
-  return useAlt ? "url(#node-grad-alt)" : "url(#node-grad)";
+  return "url(#node-grad)";
 }
 
 function fmt(n: number) {
@@ -178,6 +177,9 @@ export function ConstellationGraph({
   const rafRef = useRef(0);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoveredEdgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [edgeMode, setEdgeMode] = useState<"tx_count" | "total_amount">(
     edgeWeight,
   );
@@ -316,7 +318,6 @@ export function ConstellationGraph({
           role="img"
           aria-label="ICP wallet transaction network constellation"
         >
-          <title>ICP Wallet Transaction Network</title>
           <defs>
             <filter
               id="glow-center"
@@ -353,10 +354,6 @@ export function ConstellationGraph({
             <radialGradient id="node-grad" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="#88D8FF" stopOpacity="1" />
               <stop offset="100%" stopColor="#4AA8FF" stopOpacity="0.7" />
-            </radialGradient>
-            <radialGradient id="node-grad-alt" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#FFD080" stopOpacity="1" />
-              <stop offset="100%" stopColor="#F0B35A" stopOpacity="0.7" />
             </radialGradient>
             <radialGradient id="node-grad-green" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="#6FFFB4" stopOpacity="1" />
@@ -428,13 +425,16 @@ export function ConstellationGraph({
                     strokeWidth={12}
                     opacity={0}
                     style={{ cursor: "crosshair" }}
-                    onMouseEnter={(e) =>
+                    onMouseEnter={(e) => {
+                      if (hoveredEdgeTimerRef.current)
+                        clearTimeout(hoveredEdgeTimerRef.current);
+                      hoveredEdgeTimerRef.current = null;
                       setHoveredEdge({
                         edgeKey,
                         screenX: e.clientX,
                         screenY: e.clientY,
-                      })
-                    }
+                      });
+                    }}
                     onMouseMove={(e) =>
                       setHoveredEdge((prev) =>
                         prev
@@ -446,7 +446,14 @@ export function ConstellationGraph({
                           : prev,
                       )
                     }
-                    onMouseLeave={() => setHoveredEdge(null)}
+                    onMouseLeave={() => {
+                      if (hoveredEdgeTimerRef.current)
+                        clearTimeout(hoveredEdgeTimerRef.current);
+                      hoveredEdgeTimerRef.current = setTimeout(
+                        () => setHoveredEdge(null),
+                        10000,
+                      );
+                    }}
                     onTouchStart={(e) => {
                       const touch = e.touches[0];
                       if (touch) {
@@ -455,7 +462,10 @@ export function ConstellationGraph({
                           screenX: touch.clientX,
                           screenY: touch.clientY,
                         });
-                        setTimeout(() => setHoveredEdge(null), 2500);
+                        hoveredEdgeTimerRef.current = setTimeout(
+                          () => setHoveredEdge(null),
+                          10000,
+                        );
                       }
                     }}
                   />

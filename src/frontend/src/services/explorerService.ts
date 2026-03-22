@@ -18,6 +18,10 @@ function parseTimestamp(raw: string | number | null | undefined): string {
       raw > 1e15 ? Math.floor(raw / 1e6) : raw > 1e12 ? raw : raw * 1000;
     return new Date(asMs).toISOString();
   }
+  // Handle nanosecond timestamps as strings (e.g. "1774049945985165918")
+  if (typeof raw === "string" && /^\d{18,19}$/.test(raw)) {
+    return new Date(Math.floor(Number(raw) / 1e6)).toISOString();
+  }
   return new Date(raw).toISOString();
 }
 
@@ -282,6 +286,7 @@ export function normalizeTransaction(raw: any): Transaction | null {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function extractTransactionArray(data: any): any[] {
   if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.blocks)) return data.blocks;
   if (Array.isArray(data?.transactions)) return data.transactions;
   if (Array.isArray(data?.data?.transactions)) return data.data.transactions;
@@ -439,6 +444,38 @@ function normalizeIcrcTransaction(
   decimals: number,
 ): Transaction | null {
   try {
+    // Handle flat format: { index, kind, amount, from_owner, to_owner, from_account, to_account, timestamp }
+    if (raw.from_owner !== undefined || raw.to_owner !== undefined) {
+      const kind = String(raw.kind ?? "");
+      if (kind === "mint") {
+        return {
+          timestamp: parseTimestamp(raw.timestamp),
+          from: "minting-account",
+          to: String(raw.to_account ?? raw.to_owner ?? ""),
+          amount: Number(raw.amount ?? 0) / 10 ** decimals,
+          blockIndex: Number(raw.index ?? raw.block_index ?? 0),
+        };
+      }
+      if (kind === "burn") {
+        return {
+          timestamp: parseTimestamp(raw.timestamp),
+          from: String(raw.from_account ?? raw.from_owner ?? ""),
+          to: "burn-address",
+          amount: Number(raw.amount ?? 0) / 10 ** decimals,
+          blockIndex: Number(raw.index ?? raw.block_index ?? 0),
+        };
+      }
+      // transfer (default)
+      return {
+        timestamp: parseTimestamp(raw.timestamp),
+        from: String(raw.from_account ?? raw.from_owner ?? ""),
+        to: String(raw.to_account ?? raw.to_owner ?? ""),
+        amount: Number(raw.amount ?? 0) / 10 ** decimals,
+        blockIndex: Number(raw.index ?? raw.block_index ?? 0),
+      };
+    }
+
+    // Handle nested format: { transaction: { transfer/mint/burn, timestamp } }
     const tx = raw?.transaction;
     if (!tx) return null;
 

@@ -29,7 +29,6 @@ export function StatusPanel() {
   const [explorerStatus, setExplorerStatus] = useState<StatusLevel>("checking");
   const [parserStatus, setParserStatus] = useState<StatusLevel>("checking");
 
-  // Backend ping
   const pingQuery = useQuery({
     queryKey: ["status-ping"],
     queryFn: async () => {
@@ -41,7 +40,6 @@ export function StatusPanel() {
     staleTime: 30_000,
   });
 
-  // Explorer reachability check
   useEffect(() => {
     setExplorerStatus("checking");
     checkExplorerReachable().then((ok) =>
@@ -49,7 +47,6 @@ export function StatusPanel() {
     );
   }, []);
 
-  // Parser test
   useEffect(() => {
     setParserStatus(testParser() ? "ok" : "error");
   }, []);
@@ -70,38 +67,31 @@ export function StatusPanel() {
   ];
 
   return (
-    <div
-      className="absolute bottom-4 right-4 z-10 bg-card/90 border border-border rounded-lg p-3 backdrop-blur-sm shadow-lg"
-      data-ocid="wallet.panel"
-    >
-      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-        System Status
-      </div>
-      <div className="space-y-1.5">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center gap-2">
-            <StatusDot status={row.status} />
-            <span className="text-xs text-muted-foreground w-16">
-              {row.label}
-            </span>
-            <span
-              className={`text-xs font-medium ${
-                row.status === "ok"
-                  ? "text-neon-green"
-                  : row.status === "error"
-                    ? "text-neon-red"
-                    : "text-neon-amber"
-              }`}
-            >
-              {row.status === "ok"
-                ? "Online"
+    <div className="flex items-center gap-3 flex-wrap" data-ocid="wallet.panel">
+      {rows.map((row, i) => (
+        <div key={row.label} className="flex items-center gap-1.5">
+          {i > 0 && (
+            <span className="text-border text-xs select-none mr-1.5">|</span>
+          )}
+          <StatusDot status={row.status} />
+          <span className="text-xs text-muted-foreground">{row.label}</span>
+          <span
+            className={`text-xs font-medium ${
+              row.status === "ok"
+                ? "text-neon-green"
                 : row.status === "error"
-                  ? "Offline"
-                  : "Checking…"}
-            </span>
-          </div>
-        ))}
-      </div>
+                  ? "text-neon-red"
+                  : "text-neon-amber"
+            }`}
+          >
+            {row.status === "ok"
+              ? "Online"
+              : row.status === "error"
+                ? "Offline"
+                : "Checking…"}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
