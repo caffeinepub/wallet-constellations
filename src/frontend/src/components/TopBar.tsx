@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, Star } from "lucide-react";
+import { Loader2, Search, Star, X } from "lucide-react";
 import { useState } from "react";
 import type { TimeRange } from "../types";
 
@@ -36,6 +36,11 @@ export function TopBar({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSubmit();
+  };
+
+  const handleClear = () => {
+    setInputValue("");
+    onReset();
   };
 
   return (
@@ -71,8 +76,21 @@ export function TopBar({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="pl-9 bg-muted/50 border-border text-foreground placeholder:text-muted-foreground focus:ring-1 focus:ring-neon-blue/50 focus:border-neon-blue/50"
+              className={`pl-9 bg-muted/50 border-border text-foreground placeholder:text-muted-foreground focus:ring-1 focus:ring-neon-blue/50 focus:border-neon-blue/50 ${
+                inputValue ? "pr-8" : ""
+              }`}
             />
+            {inputValue && (
+              <button
+                type="button"
+                onClick={handleClear}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                data-ocid="wallet.close_button"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           {/* Explorer selector (disabled) */}

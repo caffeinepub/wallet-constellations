@@ -214,6 +214,71 @@ function processTransactionsForDepth(
   return { txCount, edgeData };
 }
 
+/**
+ * Scan transactions and add edges between any two nodes that are already in
+ * allNodes (cross-edges: same-depth or across non-parent-child depths).
+ */
+function addCrossEdges(
+  allTxs: Transaction[],
+  allNodes: Map<string, GraphNode>,
+  allEdges: Map<string, GraphEdge>,
+) {
+  for (const tx of allTxs) {
+    const fromLower = tx.from.toLowerCase();
+    const toLower = tx.to.toLowerCase();
+    if (fromLower === toLower) continue;
+    const fromNode = allNodes.get(fromLower);
+    const toNode = allNodes.get(toLower);
+    if (!fromNode || !toNode) continue;
+
+    // Only add cross-edges (skip parent-child edges already added)
+    const key1 = `${fromLower}|${toLower}`;
+    const key2 = `${toLower}|${fromLower}`;
+    const token = tx.token ?? "ICP";
+    const isIcp = token === "ICP";
+
+    const existingKey = allEdges.has(key1)
+      ? key1
+      : allEdges.has(key2)
+        ? key2
+        : null;
+    if (existingKey) {
+      // Update existing edge
+      const e = allEdges.get(existingKey)!;
+      e.tx_count += 1;
+      if (isIcp) e.total_amount += tx.amount;
+      // from→to = outbound from fromNode, inbound to toNode
+      // we treat inbound/outbound relative to the lower-depth node
+      const isInbound = existingKey === key2; // key2 means to|from, so from's perspective it's inbound
+      if (isInbound) {
+        e.inCount += 1;
+        addTokenAmount(e.inAmountByToken!, token, tx.amount);
+        addTokenAmount(e.inCountByToken!, token, 1);
+      } else {
+        e.outCount += 1;
+        addTokenAmount(e.outAmountByToken!, token, tx.amount);
+        addTokenAmount(e.outCountByToken!, token, 1);
+      }
+    } else {
+      // New cross-edge
+      const outAmountByToken: Record<string, number> = { [token]: tx.amount };
+      const outCountByToken: Record<string, number> = { [token]: 1 };
+      allEdges.set(key1, {
+        source: fromNode.id,
+        target: toNode.id,
+        tx_count: 1,
+        total_amount: isIcp ? tx.amount : 0,
+        inCount: 0,
+        outCount: 1,
+        inAmountByToken: {},
+        outAmountByToken,
+        inCountByToken: {},
+        outCountByToken,
+      });
+    }
+  }
+}
+
 export function buildMultiDepthGraph(
   center: { displayId: string; accountId: string; transactions: Transaction[] },
   depth1Fetches: Array<{
@@ -227,6 +292,7 @@ export function buildMultiDepthGraph(
     transactions: Transaction[];
   }>,
   maxCounterparties: number,
+  showCrossEdges = false,
 ): WalletGraph {
   const allNodes = new Map<string, GraphNode>();
   const allEdges = new Map<string, GraphEdge>();
@@ -367,6 +433,16 @@ export function buildMultiDepthGraph(
         outCountByToken: edgeInfo.outCountByToken,
       });
     }
+  }
+
+  // Cross-edges: connections between nodes already in graph (across/within depths)
+  if (showCrossEdges) {
+    const allTxs = [
+      ...center.transactions,
+      ...depth1Fetches.flatMap((f) => f.transactions),
+      ...depth2Fetches.flatMap((f) => f.transactions),
+    ];
+    addCrossEdges(allTxs, allNodes, allEdges);
   }
 
   return {

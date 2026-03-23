@@ -18,11 +18,22 @@ function parseTimestamp(raw: string | number | null | undefined): string {
       raw > 1e15 ? Math.floor(raw / 1e6) : raw > 1e12 ? raw : raw * 1000;
     return new Date(asMs).toISOString();
   }
-  // Handle nanosecond timestamps as strings (e.g. "1774049945985165918")
   if (typeof raw === "string" && /^\d{18,19}$/.test(raw)) {
     return new Date(Math.floor(Number(raw) / 1e6)).toISOString();
   }
   return new Date(raw).toISOString();
+}
+
+// Safely extract a principal string from a value that may be a string or
+// an object like { owner: "principal-id", subaccount: [...] }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractOwner(val: any): string {
+  if (!val) return "";
+  if (typeof val === "string") return val;
+  if (typeof val === "object") {
+    return String(val.owner ?? val.address ?? "");
+  }
+  return String(val);
 }
 
 // SHA-224 implementation (pure JS, no external deps)
@@ -414,25 +425,38 @@ export interface IcrcTokenInfo {
 let icrcTokenListCache: IcrcTokenInfo[] | null = null;
 
 export async function fetchIcrcTokenList(): Promise<IcrcTokenInfo[]> {
-  if (icrcTokenListCache) return icrcTokenListCache;
+  if (icrcTokenListCache && icrcTokenListCache.length > 0)
+    return icrcTokenListCache;
   try {
-    const res = await fetch(`${ICRC_API_BASE}/api/v1/ledgers`, {
+    const res = await fetch(`${ICRC_API_BASE}/api/v1/ledgers?limit=100`, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return [];
     const data = await res.json();
+    // API returns { data: [...], total_ledgers: N }
     const list = Array.isArray(data)
       ? data
       : (data?.data ?? data?.ledgers ?? []);
-    icrcTokenListCache = (Array.isArray(list) ? list : [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsed = (Array.isArray(list) ? list : [])
       .map((item: any) => ({
-        canisterId: item.canister_id ?? item.id ?? "",
-        symbol: item.symbol ?? item.token_symbol ?? "UNKNOWN",
-        decimals: item.decimals ?? 8,
+        canisterId:
+          item.ledger_canister_id ?? item.canister_id ?? item.id ?? "",
+        symbol:
+          item.icrc1_metadata?.icrc1_symbol ??
+          item.symbol ??
+          item.token_symbol ??
+          "UNKNOWN",
+        decimals: Number(
+          item.icrc1_metadata?.icrc1_decimals ?? item.decimals ?? 8,
+        ),
       }))
       .filter((t: IcrcTokenInfo) => t.canisterId);
-    return icrcTokenListCache ?? [];
+    if (parsed.length > 0) {
+      icrcTokenListCache = parsed;
+    }
+    return parsed;
   } catch {
     return [];
   }
@@ -445,13 +469,14 @@ function normalizeIcrcTransaction(
 ): Transaction | null {
   try {
     // Handle flat format: { index, kind, amount, from_owner, to_owner, from_account, to_account, timestamp }
+    // from_owner / to_owner may be a plain string OR an object { owner: "...", subaccount: [...] }
     if (raw.from_owner !== undefined || raw.to_owner !== undefined) {
       const kind = String(raw.kind ?? "");
       if (kind === "mint") {
         return {
           timestamp: parseTimestamp(raw.timestamp),
           from: "minting-account",
-          to: String(raw.to_account ?? raw.to_owner ?? ""),
+          to: extractOwner(raw.to_owner ?? raw.to_account),
           amount: Number(raw.amount ?? 0) / 10 ** decimals,
           blockIndex: Number(raw.index ?? raw.block_index ?? 0),
         };
@@ -459,7 +484,7 @@ function normalizeIcrcTransaction(
       if (kind === "burn") {
         return {
           timestamp: parseTimestamp(raw.timestamp),
-          from: String(raw.from_account ?? raw.from_owner ?? ""),
+          from: extractOwner(raw.from_owner ?? raw.from_account),
           to: "burn-address",
           amount: Number(raw.amount ?? 0) / 10 ** decimals,
           blockIndex: Number(raw.index ?? raw.block_index ?? 0),
@@ -468,8 +493,8 @@ function normalizeIcrcTransaction(
       // transfer (default)
       return {
         timestamp: parseTimestamp(raw.timestamp),
-        from: String(raw.from_account ?? raw.from_owner ?? ""),
-        to: String(raw.to_account ?? raw.to_owner ?? ""),
+        from: extractOwner(raw.from_owner ?? raw.from_account),
+        to: extractOwner(raw.to_owner ?? raw.to_account),
         amount: Number(raw.amount ?? 0) / 10 ** decimals,
         blockIndex: Number(raw.index ?? raw.block_index ?? 0),
       };
@@ -480,8 +505,8 @@ function normalizeIcrcTransaction(
     if (!tx) return null;
 
     if (tx.transfer) {
-      const from = String(tx.transfer.from?.owner ?? tx.transfer.from ?? "");
-      const to = String(tx.transfer.to?.owner ?? tx.transfer.to ?? "");
+      const from = extractOwner(tx.transfer.from?.owner ?? tx.transfer.from);
+      const to = extractOwner(tx.transfer.to?.owner ?? tx.transfer.to);
       const amount = Number(tx.transfer.amount ?? 0) / 10 ** decimals;
       return {
         timestamp: parseTimestamp(tx.timestamp ?? raw.timestamp),
@@ -493,7 +518,7 @@ function normalizeIcrcTransaction(
     }
 
     if (tx.mint) {
-      const to = String(tx.mint.to?.owner ?? tx.mint.to ?? "");
+      const to = extractOwner(tx.mint.to?.owner ?? tx.mint.to);
       const amount = Number(tx.mint.amount ?? 0) / 10 ** decimals;
       return {
         timestamp: parseTimestamp(tx.timestamp ?? raw.timestamp),
@@ -505,7 +530,7 @@ function normalizeIcrcTransaction(
     }
 
     if (tx.burn) {
-      const from = String(tx.burn.from?.owner ?? tx.burn.from ?? "");
+      const from = extractOwner(tx.burn.from?.owner ?? tx.burn.from);
       const amount = Number(tx.burn.amount ?? 0) / 10 ** decimals;
       return {
         timestamp: parseTimestamp(tx.timestamp ?? raw.timestamp),
@@ -517,8 +542,8 @@ function normalizeIcrcTransaction(
     }
 
     if (raw.from !== undefined && raw.to !== undefined) {
-      const from = String(raw.from?.owner ?? raw.from ?? "");
-      const to = String(raw.to?.owner ?? raw.to ?? "");
+      const from = extractOwner(raw.from?.owner ?? raw.from);
+      const to = extractOwner(raw.to?.owner ?? raw.to);
       const amount = Number(raw.amount ?? 0) / 10 ** decimals;
       return {
         timestamp: parseTimestamp(raw.timestamp ?? raw.created_at),

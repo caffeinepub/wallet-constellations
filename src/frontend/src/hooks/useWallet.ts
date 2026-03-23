@@ -41,6 +41,7 @@ export function useWallet() {
   const [accountIdentifier, setAccountIdentifier] = useState("");
   const [proxyUrl, setProxyUrl] = useState("");
   const [graphDepth, setGraphDepth] = useState<1 | 2 | 3>(1);
+  const [showCrossEdges, setShowCrossEdges] = useState(false);
   const [depthLoading, setDepthLoading] = useState(false);
   const [depth1Fetches, setDepth1Fetches] = useState<DepthFetch[]>([]);
   const [depth2Fetches, setDepth2Fetches] = useState<DepthFetch[]>([]);
@@ -128,6 +129,17 @@ export function useWallet() {
     [currentPrincipal, loadPrincipal],
   );
 
+  // Fresh search — clears breadcrumb history
+  const search = useCallback(
+    async (principal: string) => {
+      if (!principal.trim()) return;
+      setHistoryStack([]);
+      setCurrentPrincipal(principal.trim());
+      await loadPrincipal(principal.trim());
+    },
+    [loadPrincipal],
+  );
+
   const goBack = useCallback(async () => {
     if (historyStack.length === 0) return;
     const prev = historyStack[historyStack.length - 1];
@@ -158,6 +170,7 @@ export function useWallet() {
     setDepth1Fetches([]);
     setDepth2Fetches([]);
     setGraphDepth(1);
+    setShowCrossEdges(false);
     setIcrcLoading(false);
   }, []);
 
@@ -248,39 +261,44 @@ export function useWallet() {
   }, [accountIdentifier, rawTransactions, graphDepth]);
 
   const walletData = useMemo<WalletData | null>(() => {
-    if (!currentPrincipal || filteredTransactions.length === 0) return null;
+    if (!currentPrincipal || rawTransactions.length === 0) return null;
     const acctId = accountIdentifier || currentPrincipal;
+    // Graph uses ALL raw transactions (not time-filtered) so old ICRC activity shows
     const graph =
       graphDepth === 1
         ? buildGraph(
             currentPrincipal,
             acctId,
-            filteredTransactions,
+            rawTransactions,
             maxCounterparties,
           )
         : buildMultiDepthGraph(
             {
               displayId: currentPrincipal,
               accountId: acctId,
-              transactions: filteredTransactions,
+              transactions: rawTransactions,
             },
             depth1Fetches,
             depth2Fetches,
             maxCounterparties,
+            showCrossEdges,
           );
     return {
+      // Summary and table use filtered transactions (respects time range)
       summary: computeSummary(acctId, filteredTransactions),
       transactions: filteredTransactions,
       graph,
     };
   }, [
     currentPrincipal,
+    rawTransactions,
     filteredTransactions,
     maxCounterparties,
     accountIdentifier,
     graphDepth,
     depth1Fetches,
     depth2Fetches,
+    showCrossEdges,
   ]);
 
   return {
@@ -298,6 +316,7 @@ export function useWallet() {
     filteredTransactions,
     walletData,
     navigate,
+    search,
     goBack,
     jumpTo,
     reset,
@@ -305,6 +324,8 @@ export function useWallet() {
     setProxyUrl,
     graphDepth,
     setGraphDepth,
+    showCrossEdges,
+    setShowCrossEdges,
     depthLoading,
     icrcLoading,
   };

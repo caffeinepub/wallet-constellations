@@ -136,6 +136,7 @@ export default function App() {
     errorType,
     walletData,
     navigate,
+    search,
     goBack,
     jumpTo,
     reset,
@@ -143,6 +144,8 @@ export default function App() {
     setProxyUrl,
     graphDepth,
     setGraphDepth,
+    showCrossEdges,
+    setShowCrossEdges,
     depthLoading,
     icrcLoading,
   } = useWallet();
@@ -176,7 +179,7 @@ export default function App() {
       <Toaster />
 
       <TopBar
-        onSearch={navigate}
+        onSearch={search}
         onReset={reset}
         loading={loading}
         timeRange={timeRange}
@@ -253,6 +256,8 @@ export default function App() {
                   txLimit={txLimit}
                   onTxLimitChange={setTxLimit}
                   icrcLoading={icrcLoading}
+                  showCrossEdges={showCrossEdges}
+                  onShowCrossEdgesChange={setShowCrossEdges}
                 />
               </div>
             ) : (

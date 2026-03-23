@@ -6,8 +6,10 @@ import {
   HelpCircle,
   Loader2,
   RotateCcw,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GraphEdge, GraphNode } from "../types";
 
 // --- Force simulation types ---
@@ -89,6 +91,14 @@ function shortenId(id: string) {
   return `${id.slice(0, 6)}\u2026${id.slice(-4)}`;
 }
 
+// Format token amounts: always 3 decimals, k for thousands, M for millions
+function fmt(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(3)}M`;
+  if (abs >= 1_000) return `${(n / 1_000).toFixed(3)}k`;
+  return n.toFixed(3);
+}
+
 // Seeded star positions for consistent renders
 const STARS = (() => {
   let s = 42;
@@ -132,6 +142,8 @@ interface ConstellationGraphProps {
   txLimit: number;
   onTxLimitChange: (v: number) => void;
   icrcLoading?: boolean;
+  showCrossEdges: boolean;
+  onShowCrossEdgesChange: (v: boolean) => void;
 }
 
 function getNodeGradient(node: SimNode): string {
@@ -142,8 +154,10 @@ function getNodeGradient(node: SimNode): string {
   return "url(#node-grad)";
 }
 
-function fmt(n: number) {
-  return n.toFixed(4);
+interface Transform {
+  x: number;
+  y: number;
+  scale: number;
 }
 
 export function ConstellationGraph({
@@ -160,6 +174,8 @@ export function ConstellationGraph({
   txLimit,
   onTxLimitChange,
   icrcLoading = false,
+  showCrossEdges,
+  onShowCrossEdgesChange,
 }: ConstellationGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
@@ -187,6 +203,25 @@ export function ConstellationGraph({
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [legendOpen, setLegendOpen] = useState(false);
 
+  // Unified transform state: translate + scale
+  const [transform, setTransform] = useState<Transform>({
+    x: 0,
+    y: 0,
+    scale: 1,
+  });
+
+  // Drag state
+  const isDragging = useRef(false);
+  const dragStart = useRef({ mouseX: 0, mouseY: 0, tx: 0, ty: 0 });
+  const dragMoved = useRef(false);
+  const pointerDownOnNode = useRef(false);
+
+  // Pinch state
+  const lastTouchDist = useRef<number | null>(null);
+  const lastPinchMid = useRef<{ x: number; y: number } | null>(null);
+  // Single-finger pan
+  const lastSingleTouch = useRef<{ x: number; y: number } | null>(null);
+
   // Track resize
   useEffect(() => {
     const el = containerRef.current;
@@ -199,6 +234,59 @@ export function ConstellationGraph({
     setWidth(el.offsetWidth);
     setHeight(el.offsetHeight);
     return () => ro.disconnect();
+  }, []);
+
+  // Wheel zoom — toward cursor
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    const rect = containerRef.current!.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.1 : 0.909;
+    setTransform((prev) => {
+      const newScale = Math.min(4, Math.max(0.25, prev.scale * factor));
+      const f = newScale / prev.scale;
+      return {
+        scale: newScale,
+        x: mx - (mx - prev.x) * f,
+        y: my - (my - prev.y) * f,
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
+
+  // Mouse drag — document-level move/up
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const dx = e.clientX - dragStart.current.mouseX;
+      const dy = e.clientY - dragStart.current.mouseY;
+      if (!dragMoved.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        dragMoved.current = true;
+      }
+      if (dragMoved.current) {
+        setTransform((prev) => ({
+          ...prev,
+          x: dragStart.current.tx + dx,
+          y: dragStart.current.ty + dy,
+        }));
+      }
+    };
+    const onUp = () => {
+      isDragging.current = false;
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
   }, []);
 
   const nodeKey = propNodes.map((n) => n.id).join(",");
@@ -302,6 +390,24 @@ export function ConstellationGraph({
     );
   }, [hoveredEdge, propEdges]);
 
+  // Settings panel bg: slightly opaque so it reads clearly over the graph
+  const settingsBg = "bg-card/92 border border-border backdrop-blur-sm";
+
+  // Zoom toward viewport center (for +/- buttons)
+  const zoomToCenter = (delta: number) => {
+    setTransform((prev) => {
+      const cx = width / 2;
+      const cy = height / 2;
+      const newScale = Math.min(4, Math.max(0.25, prev.scale + delta));
+      const f = newScale / prev.scale;
+      return {
+        scale: newScale,
+        x: cx - (cx - prev.x) * f,
+        y: cy - (cy - prev.y) * f,
+      };
+    });
+  };
+
   return (
     // Outer wrapper — no overflow-hidden so legend popover renders freely
     <div className="relative w-full h-full" data-ocid="wallet.canvas_target">
@@ -309,14 +415,106 @@ export function ConstellationGraph({
       <div
         ref={containerRef}
         className="absolute inset-0 overflow-hidden rounded-lg border border-border bg-card"
+        style={{ cursor: isDragging.current ? "grabbing" : "grab" }}
+        onMouseDown={(e) => {
+          // Only start drag if not on a node
+          if (pointerDownOnNode.current) return;
+          isDragging.current = true;
+          dragMoved.current = false;
+          dragStart.current = {
+            mouseX: e.clientX,
+            mouseY: e.clientY,
+            tx: transform.x,
+            ty: transform.y,
+          };
+        }}
       >
         <svg
           width={width}
           height={height}
           className="absolute inset-0"
-          style={{ display: "block", touchAction: "none" }}
+          style={{
+            display: "block",
+            touchAction: "none",
+            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+            transformOrigin: "0 0",
+          }}
           role="img"
           aria-label="ICP wallet transaction network constellation"
+          onTouchStart={(e) => {
+            if (e.touches.length === 2) {
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              lastTouchDist.current = Math.sqrt(dx * dx + dy * dy);
+              const rect = containerRef.current!.getBoundingClientRect();
+              lastPinchMid.current = {
+                x:
+                  (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+                y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
+              };
+              lastSingleTouch.current = null;
+            } else if (e.touches.length === 1) {
+              lastSingleTouch.current = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY,
+              };
+              lastTouchDist.current = null;
+              lastPinchMid.current = null;
+            }
+          }}
+          onTouchMove={(e) => {
+            if (e.touches.length === 2 && lastTouchDist.current !== null) {
+              e.preventDefault();
+              const dx = e.touches[0].clientX - e.touches[1].clientX;
+              const dy = e.touches[0].clientY - e.touches[1].clientY;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              const rect = containerRef.current!.getBoundingClientRect();
+              const midX =
+                (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+              const midY =
+                (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+              const ratio = dist / lastTouchDist.current;
+              const prevMid = lastPinchMid.current ?? { x: midX, y: midY };
+              setTransform((prev) => {
+                const newScale = Math.min(
+                  4,
+                  Math.max(0.25, prev.scale * ratio),
+                );
+                const f = newScale / prev.scale;
+                // Zoom toward pinch midpoint + pan by midpoint delta
+                const panDx = midX - prevMid.x;
+                const panDy = midY - prevMid.y;
+                return {
+                  scale: newScale,
+                  x: midX - (midX - prev.x) * f + panDx,
+                  y: midY - (midY - prev.y) * f + panDy,
+                };
+              });
+              lastTouchDist.current = dist;
+              lastPinchMid.current = { x: midX, y: midY };
+            } else if (
+              e.touches.length === 1 &&
+              lastSingleTouch.current !== null
+            ) {
+              e.preventDefault();
+              const dx = e.touches[0].clientX - lastSingleTouch.current.x;
+              const dy = e.touches[0].clientY - lastSingleTouch.current.y;
+              setTransform((prev) => ({
+                ...prev,
+                x: prev.x + dx,
+                y: prev.y + dy,
+              }));
+              lastSingleTouch.current = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY,
+              };
+            }
+          }}
+          onTouchEnd={() => {
+            lastTouchDist.current = null;
+            lastPinchMid.current = null;
+            lastSingleTouch.current = null;
+          }}
         >
           <defs>
             <filter
@@ -399,8 +597,8 @@ export function ConstellationGraph({
               const w =
                 edgeMode === "tx_count" ? edge.tx_count : edge.total_amount;
               const ratio = w / maxWeight;
-              const opacity = 0.15 + 0.55 * ratio;
-              const strokeW = 0.5 + 2 * ratio;
+              const opacity = 0.35 + 0.45 * ratio;
+              const strokeW = 1.5 + 4 * ratio;
               const dx = tgt.x - src.x;
               const dy = tgt.y - src.y;
               const cpx = (src.x + tgt.x) / 2 + dy * 0.22;
@@ -484,8 +682,15 @@ export function ConstellationGraph({
                 key={node.id}
                 transform={`translate(${node.x}, ${node.y})`}
                 style={{ cursor: isCenter ? "default" : "pointer" }}
+                onMouseDown={() => {
+                  pointerDownOnNode.current = true;
+                  // Reset after a tick so container mousedown check works
+                  setTimeout(() => {
+                    pointerDownOnNode.current = false;
+                  }, 0);
+                }}
                 onClick={() => {
-                  if (!isCenter) onNavigate(node.id);
+                  if (!isCenter && !dragMoved.current) onNavigate(node.id);
                 }}
                 onKeyDown={(e) => {
                   if (!isCenter && (e.key === "Enter" || e.key === " ")) {
@@ -567,7 +772,7 @@ export function ConstellationGraph({
             type="button"
             data-ocid="wallet.toggle"
             onClick={() => setSettingsOpen((o) => !o)}
-            className="self-end flex items-center gap-1 text-xs px-2 py-1 rounded border bg-card/80 border-border text-muted-foreground hover:text-foreground backdrop-blur-sm transition-colors"
+            className={`self-end flex items-center gap-1 text-xs px-2 py-1 rounded ${settingsBg} text-muted-foreground hover:text-foreground transition-colors`}
             title={settingsOpen ? "Collapse settings" : "Expand settings"}
           >
             {settingsOpen ? (
@@ -581,7 +786,7 @@ export function ConstellationGraph({
           {settingsOpen && (
             <>
               {/* Depth selector */}
-              <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm">
+              <div className={`${settingsBg} rounded p-2`}>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5">
                   Depth
                   {depthLoading && (
@@ -606,6 +811,23 @@ export function ConstellationGraph({
                   ))}
                 </div>
               </div>
+
+              {/* Full network toggle — only visible at depth 2+ */}
+              {graphDepth >= 2 && (
+                <div className={`${settingsBg} rounded p-2`}>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showCrossEdges}
+                      onChange={(e) => onShowCrossEdgesChange(e.target.checked)}
+                      className="w-3 h-3 accent-neon-blue"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      Full network
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <div className="flex gap-1.5">
                 <button
@@ -635,7 +857,7 @@ export function ConstellationGraph({
               </div>
 
               {/* Max counterparties slider */}
-              <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
+              <div className={`${settingsBg} rounded p-2 w-36`}>
                 <div className="text-xs text-muted-foreground mb-1.5">
                   Nodes: {maxCounterparties}
                 </div>
@@ -650,7 +872,7 @@ export function ConstellationGraph({
               </div>
 
               {/* Tx limit slider */}
-              <div className="bg-card/80 border border-border rounded p-2 backdrop-blur-sm w-36">
+              <div className={`${settingsBg} rounded p-2 w-36`}>
                 <div className="text-xs text-muted-foreground mb-1.5">
                   Tx Limit: {txLimit}
                 </div>
@@ -669,7 +891,7 @@ export function ConstellationGraph({
                 size="sm"
                 variant="ghost"
                 onClick={runSim}
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground bg-card/80 border border-border"
+                className={`h-7 px-2 text-xs text-muted-foreground hover:text-foreground ${settingsBg}`}
                 title="Reset layout"
               >
                 <RotateCcw className="h-3 w-3 mr-1" />
@@ -679,10 +901,30 @@ export function ConstellationGraph({
           )}
         </div>
 
+        {/* Zoom controls */}
+        <div className="absolute bottom-3 left-3 flex flex-col gap-1 z-10">
+          <button
+            type="button"
+            onClick={() => zoomToCenter(0.25)}
+            className={`flex items-center justify-center w-7 h-7 rounded ${settingsBg} text-muted-foreground hover:text-foreground transition-colors text-sm font-bold`}
+            title="Zoom in"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomToCenter(-0.25)}
+            className={`flex items-center justify-center w-7 h-7 rounded ${settingsBg} text-muted-foreground hover:text-foreground transition-colors text-sm font-bold`}
+            title="Zoom out"
+          >
+            <ZoomOut className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
         {/* ICRC loading indicator */}
         {icrcLoading && (
           <div
-            className="absolute bottom-10 left-3 flex items-center gap-1.5 text-xs text-muted-foreground bg-card/80 border border-border rounded px-2 py-1 backdrop-blur-sm"
+            className={`absolute bottom-10 left-3 flex items-center gap-1.5 text-xs text-muted-foreground ${settingsBg} rounded px-2 py-1`}
             data-ocid="wallet.loading_state"
           >
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -696,7 +938,7 @@ export function ConstellationGraph({
         <button
           type="button"
           data-ocid="wallet.button"
-          className="flex items-center justify-center w-7 h-7 rounded-full bg-card/80 border border-border text-muted-foreground hover:text-foreground backdrop-blur-sm transition-colors"
+          className={`flex items-center justify-center w-7 h-7 rounded-full ${settingsBg} text-muted-foreground hover:text-foreground transition-colors`}
           title="Graph legend"
           onClick={() => setLegendOpen((o) => !o)}
         >
@@ -753,6 +995,11 @@ export function ConstellationGraph({
                   more transactions or higher ICP volume between those two
                   wallets
                 </div>
+                <div className="mt-0.5">
+                  <strong className="text-foreground">Full network</strong> =
+                  toggle in settings to also show connections between
+                  non-adjacent nodes
+                </div>
               </div>
 
               <div>
@@ -760,26 +1007,36 @@ export function ConstellationGraph({
                   Hover a line to see
                 </div>
                 <div>
-                  <span className="text-green-400">↑ In</span> — tokens received
-                  INTO your wallet from that counterparty
+                  <span className="text-green-400">↓</span> — tokens{" "}
+                  <strong className="text-foreground">received</strong> into
+                  your wallet (inbound)
                 </div>
                 <div>
-                  <span className="text-orange-400">↓ Out</span> — tokens sent
-                  FROM your wallet to that counterparty
+                  <span className="text-orange-400">↑</span> — tokens{" "}
+                  <strong className="text-foreground">sent</strong> from your
+                  wallet (outbound)
                 </div>
                 <div className="mt-0.5">
-                  Net flow shows whether you are a net receiver or sender with
-                  that wallet.
+                  Amounts use <strong className="text-foreground">k</strong>{" "}
+                  (thousands) and <strong className="text-foreground">M</strong>{" "}
+                  (millions) with 3 decimals.
+                </div>
+                <div className="mt-0.5">
+                  <strong className="text-foreground">(n)</strong> = number of
+                  transactions (tx / txs) in that direction
                 </div>
               </div>
 
               <div>
                 <div className="font-medium text-foreground mb-0.5">
-                  Clicking a node
+                  Navigation
                 </div>
                 <div>
-                  Navigates to that wallet and makes it the new center of the
-                  graph.
+                  <strong className="text-foreground">Click a node</strong> to
+                  navigate to that wallet.{" "}
+                  <strong className="text-foreground">Drag</strong> to pan.{" "}
+                  <strong className="text-foreground">Scroll / pinch</strong> to
+                  zoom toward cursor.
                 </div>
               </div>
             </div>
@@ -804,7 +1061,7 @@ export function ConstellationGraph({
             <span className="text-foreground">{tooltip.node.txCount}</span>
           </div>
           {!tooltip.node.isCenter && (
-            <div className="text-neon-blue mt-0.5">Click to explore \u2192</div>
+            <div className="text-neon-blue mt-0.5">Click to explore →</div>
           )}
         </div>
       )}
@@ -820,59 +1077,63 @@ export function ConstellationGraph({
         >
           {hoveredEdgeData.inAmountByToken ||
           hoveredEdgeData.outAmountByToken ? (
-            <>
-              {/* Per-token breakdown */}
+            <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
               {(() => {
                 const allTokens = new Set<string>([
                   ...Object.keys(hoveredEdgeData.inAmountByToken ?? {}),
                   ...Object.keys(hoveredEdgeData.outAmountByToken ?? {}),
                 ]);
-                const rows = [...allTokens].map((token) => {
+                // ICP first, rest alphabetically
+                const sorted = [...allTokens].sort((a, b) => {
+                  if (a === "ICP") return -1;
+                  if (b === "ICP") return 1;
+                  return a.localeCompare(b);
+                });
+                return sorted.map((token) => {
                   const inAmt = hoveredEdgeData.inAmountByToken?.[token] ?? 0;
                   const outAmt = hoveredEdgeData.outAmountByToken?.[token] ?? 0;
                   const inCnt = hoveredEdgeData.inCountByToken?.[token] ?? 0;
                   const outCnt = hoveredEdgeData.outCountByToken?.[token] ?? 0;
-                  return { token, inAmt, outAmt, inCnt, outCnt };
-                });
-                return rows.map(({ token, inAmt, outAmt, inCnt, outCnt }) => (
-                  <div key={token} className="mb-1.5 last:mb-0">
-                    <div className="font-semibold text-foreground text-[11px] mb-0.5">
-                      ${token}
+                  return (
+                    <div
+                      key={token}
+                      className="flex items-baseline gap-1 whitespace-nowrap"
+                    >
+                      <span className="text-foreground font-medium">
+                        {token}:
+                      </span>
+                      {inCnt > 0 ? (
+                        <span className="text-green-400">
+                          &#x2193; {fmt(inAmt)} ({inCnt})
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/40">
+                          &#x2193; —
+                        </span>
+                      )}
+                      <span className="text-muted-foreground/50">/</span>
+                      {outCnt > 0 ? (
+                        <span className="text-orange-400">
+                          &#x2191; {fmt(outAmt)} ({outCnt})
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/40">
+                          &#x2191; —
+                        </span>
+                      )}
                     </div>
-                    {inCnt > 0 && (
-                      <div className="text-green-400">
-                        \u2191 In: {inCnt} tx / {fmt(inAmt)} ${token}
-                      </div>
-                    )}
-                    {outCnt > 0 && (
-                      <div className="text-orange-400">
-                        \u2193 Out: {outCnt} tx / {fmt(outAmt)} ${token}
-                      </div>
-                    )}
-                    {token === "ICP" && (inCnt > 0 || outCnt > 0) && (
-                      <div
-                        className={`mt-0.5 font-medium ${
-                          inAmt - outAmt >= 0
-                            ? "text-green-300"
-                            : "text-orange-300"
-                        }`}
-                      >
-                        Net: {inAmt - outAmt >= 0 ? "+" : ""}
-                        {fmt(inAmt - outAmt)} $ICP
-                      </div>
-                    )}
-                  </div>
-                ));
+                  );
+                });
               })()}
-            </>
+            </div>
           ) : (
             /* Fallback: simple display */
             <div className="flex gap-3 text-muted-foreground">
               <span className="text-green-400">
-                \u2191 {hoveredEdgeData.inCount} in
+                &#x2193; {hoveredEdgeData.inCount}
               </span>
               <span className="text-orange-400">
-                \u2193 {hoveredEdgeData.outCount} out
+                &#x2191; {hoveredEdgeData.outCount}
               </span>
             </div>
           )}
