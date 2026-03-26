@@ -148,7 +148,7 @@ function crc32(data: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function principalToAccountIdentifier(input: string): string | null {
+export function principalToAccountIdentifier(input: string): string | null {
   const trimmed = input.trim();
   if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return trimmed.toLowerCase();
   try {
@@ -175,6 +175,18 @@ function principalToAccountIdentifier(input: string): string | null {
   } catch {
     return null;
   }
+}
+
+// Convert a principal-format address to hex account ID.
+// Returns the original string if it's already a hex account ID or not a valid principal.
+function principalAddressToHex(addr: string): string {
+  if (!addr || addr === "minting-account" || addr === "burn-address")
+    return addr;
+  // Already a 64-char hex account ID
+  if (/^[0-9a-fA-F]{64}$/.test(addr.trim())) return addr.toLowerCase();
+  // Try to convert principal to hex account ID
+  const hex = principalToAccountIdentifier(addr);
+  return hex ?? addr;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -582,6 +594,11 @@ export async function fetchIcrcTransactions(
       if (tx) {
         tx.token = symbol;
         tx.decimals = decimals;
+        // Convert principal-format addresses to hex account IDs so they match
+        // the format used by ICP transactions. This ensures ICRC token amounts
+        // are merged into the same graph edges as ICP amounts for the same wallet.
+        tx.from = principalAddressToHex(tx.from);
+        tx.to = principalAddressToHex(tx.to);
         txs.push(tx);
       }
     }
