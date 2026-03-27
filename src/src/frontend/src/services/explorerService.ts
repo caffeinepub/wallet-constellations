@@ -437,7 +437,7 @@ export interface IcrcTokenInfo {
 let icrcTokenListCache: IcrcTokenInfo[] | null = null;
 
 async function fetchIcrcTokenListOnce(): Promise<IcrcTokenInfo[]> {
-  const res = await fetch(`${ICRC_API_BASE}/api/v1/ledgers?limit=100`, {
+  const res = await fetch(`${ICRC_API_BASE}/api/v1/ledgers?limit=200`, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(15000),
   });
