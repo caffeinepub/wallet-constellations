@@ -46,6 +46,7 @@ export function useWallet() {
   const [depth1Fetches, setDepth1Fetches] = useState<DepthFetch[]>([]);
   const [depth2Fetches, setDepth2Fetches] = useState<DepthFetch[]>([]);
   const [icrcLoading, setIcrcLoading] = useState(false);
+  const [icrcError, setIcrcError] = useState(false);
 
   const proxyUrlRef = useRef(proxyUrl);
   proxyUrlRef.current = proxyUrl;
@@ -61,6 +62,7 @@ export function useWallet() {
     setDepth1Fetches([]);
     setDepth2Fetches([]);
     setIcrcLoading(false);
+    setIcrcError(false);
     icrcCancelledRef.current = true; // cancel any in-flight ICRC fetch
 
     const result = await fetchWalletTransactions(
@@ -83,6 +85,15 @@ export function useWallet() {
           try {
             const tokenList = await fetchIcrcTokenList();
             if (icrcCancelledRef.current) return;
+
+            if (tokenList.length === 0) {
+              // Token list fetch failed — set error flag so UI can inform user
+              if (!icrcCancelledRef.current) {
+                setIcrcError(true);
+                setIcrcLoading(false);
+              }
+              return;
+            }
 
             const results = await Promise.all(
               tokenList.map((token) =>
@@ -172,6 +183,7 @@ export function useWallet() {
     setGraphDepth(1);
     setShowCrossEdges(false);
     setIcrcLoading(false);
+    setIcrcError(false);
   }, []);
 
   const filteredTransactions = useMemo(
@@ -328,5 +340,6 @@ export function useWallet() {
     setShowCrossEdges,
     depthLoading,
     icrcLoading,
+    icrcError,
   };
 }

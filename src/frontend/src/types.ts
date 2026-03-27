@@ -23,10 +23,10 @@ export interface GraphEdge {
   total_amount: number; // ICP only, for edge width
   inCount: number;
   outCount: number;
-  inAmountByToken?: Record<string, number>; // token symbol -> total amount in
-  outAmountByToken?: Record<string, number>; // token symbol -> total amount out
-  inCountByToken?: Record<string, number>; // token symbol -> count in
-  outCountByToken?: Record<string, number>; // token symbol -> count out
+  inAmountByToken: Record<string, number>; // token symbol -> total amount in
+  outAmountByToken: Record<string, number>; // token symbol -> total amount out
+  inCountByToken: Record<string, number>; // token symbol -> count in
+  outCountByToken: Record<string, number>; // token symbol -> count out
 }
 
 export interface WalletSummary {

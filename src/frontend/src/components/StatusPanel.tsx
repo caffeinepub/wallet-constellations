@@ -6,7 +6,7 @@ import {
   testParser,
 } from "../services/explorerService";
 
-type StatusLevel = "ok" | "error" | "checking";
+type StatusLevel = "ok" | "error" | "checking" | "unavailable";
 
 function StatusDot({ status }: { status: StatusLevel }) {
   const color =
@@ -22,6 +22,32 @@ function StatusDot({ status }: { status: StatusLevel }) {
       }`}
     />
   );
+}
+
+function statusLabel(status: StatusLevel): string {
+  switch (status) {
+    case "ok":
+      return "Online";
+    case "error":
+      return "Offline";
+    case "unavailable":
+      return "Unavailable";
+    default:
+      return "Checking\u2026";
+  }
+}
+
+function statusColor(status: StatusLevel): string {
+  switch (status) {
+    case "ok":
+      return "text-neon-green";
+    case "error":
+      return "text-neon-red";
+    case "unavailable":
+      return "text-neon-amber";
+    default:
+      return "text-neon-amber";
+  }
 }
 
 export function StatusPanel() {
@@ -56,7 +82,7 @@ export function StatusPanel() {
     : pingQuery.isSuccess
       ? "ok"
       : pingQuery.isError
-        ? "error"
+        ? "unavailable"
         : "checking";
 
   const rows = [
@@ -75,20 +101,8 @@ export function StatusPanel() {
           )}
           <StatusDot status={row.status} />
           <span className="text-xs text-muted-foreground">{row.label}</span>
-          <span
-            className={`text-xs font-medium ${
-              row.status === "ok"
-                ? "text-neon-green"
-                : row.status === "error"
-                  ? "text-neon-red"
-                  : "text-neon-amber"
-            }`}
-          >
-            {row.status === "ok"
-              ? "Online"
-              : row.status === "error"
-                ? "Offline"
-                : "Checking…"}
+          <span className={`text-xs font-medium ${statusColor(row.status)}`}>
+            {statusLabel(row.status)}
           </span>
         </div>
       ))}

@@ -90,6 +90,8 @@ export function buildGraph(
 
   const edgeMap = new Map<string, EdgeAccumulator>();
   const counterpartyTx = new Map<string, number>();
+  // Track counterparties that appear in ICRC (non-ICP) transactions
+  const icrcCounterparties = new Set<string>();
 
   for (const tx of transactions) {
     const cpLower = buildEdgeFromTx(
@@ -101,6 +103,9 @@ export function buildGraph(
     );
     if (cpLower) {
       counterpartyTx.set(cpLower, (counterpartyTx.get(cpLower) ?? 0) + 1);
+      if (tx.token && tx.token !== "ICP") {
+        icrcCounterparties.add(cpLower);
+      }
     }
   }
 
@@ -109,7 +114,14 @@ export function buildGraph(
     .slice(0, maxCounterparties)
     .map(([id]) => id);
 
+  // Always include ICRC-only counterparties regardless of the top-N limit
   const allowedSet = new Set(sortedCounterparties);
+  for (const cp of icrcCounterparties) {
+    if (!allowedSet.has(cp)) {
+      allowedSet.add(cp);
+      sortedCounterparties.push(cp);
+    }
+  }
 
   const nodes: GraphNode[] = [
     {
@@ -167,9 +179,14 @@ function processTransactionsForDepth(
   displayIdLower: string,
   existingNodes: Map<string, GraphNode>,
   skipExisting = false,
-): { txCount: Map<string, number>; edgeData: Map<string, DepthEdgeData> } {
+): {
+  txCount: Map<string, number>;
+  edgeData: Map<string, DepthEdgeData>;
+  icrcCounterparties: Set<string>;
+} {
   const txCount = new Map<string, number>();
   const edgeData = new Map<string, DepthEdgeData>();
+  const icrcCounterparties = new Set<string>();
 
   for (const tx of txs) {
     const fromLower = tx.from.toLowerCase();
@@ -186,6 +203,9 @@ function processTransactionsForDepth(
     const isIcp = token === "ICP";
 
     txCount.set(cpLower, (txCount.get(cpLower) ?? 0) + 1);
+    if (!isIcp) {
+      icrcCounterparties.add(cpLower);
+    }
     const edge = edgeData.get(cpLower) ?? {
       inCount: 0,
       outCount: 0,
@@ -211,7 +231,7 @@ function processTransactionsForDepth(
     edgeData.set(cpLower, edge);
   }
 
-  return { txCount, edgeData };
+  return { txCount, edgeData, icrcCounterparties };
 }
 
 /**
@@ -309,18 +329,31 @@ export function buildMultiDepthGraph(
   });
 
   // Depth-1
-  const { txCount: d1TxCount, edgeData: d1EdgeData } =
-    processTransactionsForDepth(
-      center.transactions,
-      centerIdLower,
-      centerDisplayIdLower,
-      allNodes,
-      false,
-    );
+  const {
+    txCount: d1TxCount,
+    edgeData: d1EdgeData,
+    icrcCounterparties: d1IcrcCps,
+  } = processTransactionsForDepth(
+    center.transactions,
+    centerIdLower,
+    centerDisplayIdLower,
+    allNodes,
+    false,
+  );
 
   const sortedD1 = [...d1TxCount.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, maxCounterparties);
+
+  // Always include ICRC-only counterparties in depth-1 regardless of top-N limit
+  const d1AllowedSet = new Set(sortedD1.map(([id]) => id));
+  for (const cp of d1IcrcCps) {
+    if (!d1AllowedSet.has(cp)) {
+      d1AllowedSet.add(cp);
+      const txCnt = d1TxCount.get(cp) ?? 0;
+      sortedD1.push([cp, txCnt]);
+    }
+  }
 
   for (const [cpLower] of sortedD1) {
     const edgeInfo = d1EdgeData.get(cpLower)!;

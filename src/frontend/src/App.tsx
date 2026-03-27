@@ -266,7 +266,6 @@ export default function App() {
                   variant={emptyVariant}
                   onProxySet={setProxyUrl}
                   proxyUrl={proxyUrl}
-                  onSearch={navigate}
                 />
               </div>
             )}

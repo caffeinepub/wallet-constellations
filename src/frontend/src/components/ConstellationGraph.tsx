@@ -1075,68 +1075,55 @@ export function ConstellationGraph({
             top: hoveredEdge.screenY - 14,
           }}
         >
-          {hoveredEdgeData.inAmountByToken ||
-          hoveredEdgeData.outAmountByToken ? (
-            <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-              {(() => {
-                const allTokens = new Set<string>([
-                  ...Object.keys(hoveredEdgeData.inAmountByToken ?? {}),
-                  ...Object.keys(hoveredEdgeData.outAmountByToken ?? {}),
-                ]);
-                // ICP first, rest alphabetically
-                const sorted = [...allTokens].sort((a, b) => {
-                  if (a === "ICP") return -1;
-                  if (b === "ICP") return 1;
-                  return a.localeCompare(b);
-                });
-                return sorted.map((token) => {
-                  const inAmt = hoveredEdgeData.inAmountByToken?.[token] ?? 0;
-                  const outAmt = hoveredEdgeData.outAmountByToken?.[token] ?? 0;
-                  const inCnt = hoveredEdgeData.inCountByToken?.[token] ?? 0;
-                  const outCnt = hoveredEdgeData.outCountByToken?.[token] ?? 0;
-                  return (
-                    <div
-                      key={token}
-                      className="flex items-baseline gap-1 whitespace-nowrap"
-                    >
-                      <span className="text-foreground font-medium">
-                        {token}:
+          <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+            {(() => {
+              const allTokens = new Set<string>([
+                ...Object.keys(hoveredEdgeData.inAmountByToken),
+                ...Object.keys(hoveredEdgeData.outAmountByToken),
+              ]);
+              // ICP first, rest alphabetically
+              const sorted = [...allTokens].sort((a, b) => {
+                if (a === "ICP") return -1;
+                if (b === "ICP") return 1;
+                return a.localeCompare(b);
+              });
+              return sorted.map((token) => {
+                const inAmt = hoveredEdgeData.inAmountByToken[token] ?? 0;
+                const outAmt = hoveredEdgeData.outAmountByToken[token] ?? 0;
+                const inCnt = hoveredEdgeData.inCountByToken[token] ?? 0;
+                const outCnt = hoveredEdgeData.outCountByToken[token] ?? 0;
+                return (
+                  <div
+                    key={token}
+                    className="flex items-baseline gap-1 whitespace-nowrap"
+                  >
+                    <span className="text-foreground font-medium">
+                      {token}:
+                    </span>
+                    {inCnt > 0 ? (
+                      <span className="text-green-400">
+                        &#x2193; {fmt(inAmt)} ({inCnt})
                       </span>
-                      {inCnt > 0 ? (
-                        <span className="text-green-400">
-                          &#x2193; {fmt(inAmt)} ({inCnt})
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/40">
-                          &#x2193; —
-                        </span>
-                      )}
-                      <span className="text-muted-foreground/50">/</span>
-                      {outCnt > 0 ? (
-                        <span className="text-orange-400">
-                          &#x2191; {fmt(outAmt)} ({outCnt})
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/40">
-                          &#x2191; —
-                        </span>
-                      )}
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          ) : (
-            /* Fallback: simple display */
-            <div className="flex gap-3 text-muted-foreground">
-              <span className="text-green-400">
-                &#x2193; {hoveredEdgeData.inCount}
-              </span>
-              <span className="text-orange-400">
-                &#x2191; {hoveredEdgeData.outCount}
-              </span>
-            </div>
-          )}
+                    ) : (
+                      <span className="text-muted-foreground/40">
+                        &#x2193; —
+                      </span>
+                    )}
+                    <span className="text-muted-foreground/50">/</span>
+                    {outCnt > 0 ? (
+                      <span className="text-orange-400">
+                        &#x2191; {fmt(outAmt)} ({outCnt})
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/40">
+                        &#x2191; —
+                      </span>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
         </div>
       )}
     </div>

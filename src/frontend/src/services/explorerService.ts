@@ -436,35 +436,43 @@ export interface IcrcTokenInfo {
 
 let icrcTokenListCache: IcrcTokenInfo[] | null = null;
 
+async function fetchIcrcTokenListOnce(): Promise<IcrcTokenInfo[]> {
+  const res = await fetch(`${ICRC_API_BASE}/api/v1/ledgers?limit=200`, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  // API returns { data: [...], total_ledgers: N }
+  const list = Array.isArray(data) ? data : (data?.data ?? data?.ledgers ?? []);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parsed = (Array.isArray(list) ? list : [])
+    .map((item: any) => ({
+      canisterId: item.ledger_canister_id ?? item.canister_id ?? item.id ?? "",
+      symbol:
+        item.icrc1_metadata?.icrc1_symbol ??
+        item.symbol ??
+        item.token_symbol ??
+        "UNKNOWN",
+      decimals: Number(
+        item.icrc1_metadata?.icrc1_decimals ?? item.decimals ?? 8,
+      ),
+    }))
+    .filter((t: IcrcTokenInfo) => t.canisterId);
+  return parsed;
+}
+
 export async function fetchIcrcTokenList(): Promise<IcrcTokenInfo[]> {
+  // Return from cache only if non-empty
   if (icrcTokenListCache && icrcTokenListCache.length > 0)
     return icrcTokenListCache;
   try {
-    const res = await fetch(`${ICRC_API_BASE}/api/v1/ledgers?limit=100`, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    // API returns { data: [...], total_ledgers: N }
-    const list = Array.isArray(data)
-      ? data
-      : (data?.data ?? data?.ledgers ?? []);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const parsed = (Array.isArray(list) ? list : [])
-      .map((item: any) => ({
-        canisterId:
-          item.ledger_canister_id ?? item.canister_id ?? item.id ?? "",
-        symbol:
-          item.icrc1_metadata?.icrc1_symbol ??
-          item.symbol ??
-          item.token_symbol ??
-          "UNKNOWN",
-        decimals: Number(
-          item.icrc1_metadata?.icrc1_decimals ?? item.decimals ?? 8,
-        ),
-      }))
-      .filter((t: IcrcTokenInfo) => t.canisterId);
+    let parsed = await fetchIcrcTokenListOnce();
+    // Retry once if the first attempt returned empty (transient failure)
+    if (parsed.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      parsed = await fetchIcrcTokenListOnce();
+    }
     if (parsed.length > 0) {
       icrcTokenListCache = parsed;
     }
@@ -578,32 +586,48 @@ export async function fetchIcrcTransactions(
   symbol = "UNKNOWN",
   decimals = 8,
 ): Promise<Transaction[]> {
-  try {
-    const url = `${ICRC_API_BASE}/api/v1/ledgers/${encodeURIComponent(canisterId)}/accounts/${encodeURIComponent(accountId)}/transactions?limit=${limit}&sort_by=-block_height`;
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const rawList = extractTransactionArray(data);
-    if (rawList.length === 0) return [];
-    const txs: Transaction[] = [];
-    for (const raw of rawList) {
-      const tx = normalizeIcrcTransaction(raw, decimals);
-      if (tx) {
-        tx.token = symbol;
-        tx.decimals = decimals;
-        // Convert principal-format addresses to hex account IDs so they match
-        // the format used by ICP transactions. This ensures ICRC token amounts
-        // are merged into the same graph edges as ICP amounts for the same wallet.
-        tx.from = principalAddressToHex(tx.from);
-        tx.to = principalAddressToHex(tx.to);
-        txs.push(tx);
+  async function tryFetch(acctId: string): Promise<Transaction[]> {
+    try {
+      const url = `${ICRC_API_BASE}/api/v1/ledgers/${encodeURIComponent(canisterId)}/accounts/${encodeURIComponent(acctId)}/transactions?limit=${limit}&sort_by=-block_height`;
+      const res = await fetch(url, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const rawList = extractTransactionArray(data);
+      if (rawList.length === 0) return [];
+      const txs: Transaction[] = [];
+      for (const raw of rawList) {
+        const tx = normalizeIcrcTransaction(raw, decimals);
+        if (tx) {
+          tx.token = symbol;
+          tx.decimals = decimals;
+          tx.from = principalAddressToHex(tx.from);
+          tx.to = principalAddressToHex(tx.to);
+          txs.push(tx);
+        }
       }
+      return txs;
+    } catch {
+      return [];
     }
-    return txs;
-  } catch {
-    return [];
   }
+
+  // Try with accountId as-is first
+  const result = await tryFetch(accountId);
+  if (result.length > 0) return result;
+
+  // If no results and accountId looks like a principal (not a 64-char hex),
+  // retry with the derived hex account identifier
+  const trimmed = accountId.trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    const hexId = principalToAccountIdentifier(trimmed);
+    if (hexId && hexId !== trimmed) {
+      const hexResult = await tryFetch(hexId);
+      if (hexResult.length > 0) return hexResult;
+    }
+  }
+
+  return result;
 }
